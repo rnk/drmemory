@@ -20,7 +20,11 @@
  */
 
 #include <stdio.h>
-#include <unistd.h>
+#include <stdlib.h>
+
+#ifdef LINUX
+# include <unistd.h>
+#endif
 
 #define MAXIMUM_PATH 260
 
@@ -29,17 +33,18 @@ int main(void)
     /* TODO(rnk): Implement windows version. */
     char dir[MAXIMUM_PATH];
 
-    if (getcwd(dir, sizeof(dir)) == NULL) {
-        printf("getcwd failed\n");
-    }
+    (void)getcwd(dir, sizeof(dir));
     printf("current directory:\n%s\n", dir);
 
-    /* cd to / and quit, DrMemory should try to access the symcache, but we
-     * don't seem to abspath it.
+    /* cd to / (will be C:\ on Win) and quit, DrMemory should try to access the
+     * symcache, but we don't seem to abspath it.
      */
     if (chdir("/") != 0) {
         printf("chdir failed\n");
     }
+
+    (void)getcwd(dir, sizeof(dir));
+    printf("current directory:\n%s\n", dir);
 
     printf("quitting\n");
 

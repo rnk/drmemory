@@ -332,10 +332,7 @@ if (UNIX)
   target_link_libraries(unload dl)
 endif (UNIX)
 
-if (UNIX)
-  # FIXME: Impl for Windows
-  newtest(symcache_test symcache_test.c)
-endif (UNIX)
+newtest(symcache_test symcache_test.c)
 
 if (NOT TOOL_DR_HEAPSTAT)
   # PR 525807: test malloc stacks
