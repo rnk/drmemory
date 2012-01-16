@@ -1447,7 +1447,9 @@ find_alloc_routines(const module_data_t *mod, const possible_alloc_routine_t *po
      * total lookup time in half.  i#315.
      */
     if (possible == possible_libc_routines ||
+#ifdef WINDOWS
         possible == possible_crtdbg_routines ||
+#endif
         possible == possible_cpp_routines) {
         bool all_processed = true;
         edata.processed = (bool *)
@@ -1485,11 +1487,11 @@ find_alloc_routines(const module_data_t *mod, const possible_alloc_routine_t *po
                 find_alloc_regex(&edata, "mall*", "mall", NULL);
                 find_alloc_regex(&edata, "*alloc", NULL, "alloc");
                 find_alloc_regex(&edata, "*_impl", NULL, "_impl");
+# ifdef WINDOWS
             } else if (possible == possible_crtdbg_routines) {
                 find_alloc_regex(&edata, "*_dbg", NULL, "_dbg");
                 find_alloc_regex(&edata, "*_dbg_impl", NULL, "_dbg_impl");
                 find_alloc_regex(&edata, "_CrtDbg*", "_CrtDbg", NULL);
-# ifdef WINDOWS
                 /* wrapper in place of real delete or delete[] operators (i#722,i#655) */
                 edata.wildcard_name = "std::_DebugHeapDelete<>";
                 find_alloc_regex(&edata, "std::_DebugHeapDelete<*>",
@@ -2205,7 +2207,6 @@ alloc_load_symcache_postcall(const module_data_t *info)
         size_t modoffs;
         uint count;
         uint idx;
-        uint i;
         ASSERT(symcache_module_is_cached(info), "must have symcache");
         for (idx = 0, count = 1;
              idx < count && symcache_lookup(info, POST_CALL_SYMCACHE_NAME,

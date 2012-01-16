@@ -131,7 +131,11 @@ else (TOOL_DR_HEAPSTAT)
   set(toolname_cap DrMemory)
   set(toolname_cap_spc "Dr. Memory")
   set(DEFINES ${DEFINES} -DTOOL_DR_MEMORY)
-  set(DRSYMS_DEFAULT ON)
+  if (WINDOWS)
+    set(DRSYMS_DEFAULT ON)
+  else ()
+    set(DRSYMS_DEFAULT OFF)
+  endif ()
 
   option(SYSCALL_DRIVER "use a kernel driver to identify system call writes")
   option(SYSCALL_DRIVER_SRCDIR "source dir of kernel driver")
@@ -203,14 +207,15 @@ set(DEFINES ${DEFINES}
   -DVERSION_NUMBER=${TOOL_VERSION_NUMBER}
   -DVERSION_STRING="${TOOL_VERSION_NUMBER}")
 
-if (WIN32)
-  # i#44/PR 243532: online symbol access
-  option(USE_DRSYMS "use drsyms DR Extension online symbols instead of post-processing"
-    ${DRSYMS_DEFAULT})
-  if (USE_DRSYMS)
-    set(DEFINES ${DEFINES} -DUSE_DRSYMS)
-  endif (USE_DRSYMS)
+# i#44/PR 243532: online symbol access
+option(USE_DRSYMS "use drsyms DR Extension online symbols instead of post-processing"
+  ${DRSYMS_DEFAULT})
+if (USE_DRSYMS)
+  set(DEFINES ${DEFINES} -DUSE_DRSYMS)
+endif (USE_DRSYMS)
 
+
+if (WIN32)
   # With the new drinjectlib-based front end we do not use perl or perl2exe
   # at all on Windows (xref i#265/PR 486139)
   if (OFF) # disabling

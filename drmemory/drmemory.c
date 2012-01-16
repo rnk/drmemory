@@ -66,6 +66,7 @@
 #include "leak.h"
 #include "stack.h"
 #include "perturb.h"
+#include "symcache.h"
 #include <stddef.h> /* for offsetof */
 
 char logsubdir[MAXIMUM_PATH];
@@ -1256,7 +1257,7 @@ event_nudge(void *drcontext, uint64 argument)
     /* PR 474554: use nudge/signal for mid-run summary/output
      * For now we have only one use, so we don't need the argument
      */
-#ifdef USE_DRSYMS
+#if defined(USE_DRSYMS) && defined(DEBUG)
     static int nudge_count;
     int local_count = atomic_add32_return_sum(&nudge_count, 1);
     LOGF(0, f_results, NL"==========================================================================="NL"SUMMARY AFTER NUDGE #%d:"NL, local_count);

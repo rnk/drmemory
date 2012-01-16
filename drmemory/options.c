@@ -26,6 +26,7 @@
 # include <stdio.h>
 # undef _GNU_SOURCE
 #endif
+#include <string.h>
 
 #include "dr_api.h"
 #include "per_thread.h"

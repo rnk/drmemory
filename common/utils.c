@@ -171,7 +171,8 @@ safe_decode(void *drcontext, app_pc pc, instr_t *inst, app_pc *next_pc /*OPTIONA
 }
 
 #ifdef USE_DRSYMS
-/* default cb used when we want first match */
+# ifdef WINDOWS
+/* default cb used for drsym_search_symbols when we want first match */
 static bool
 search_syms_cb(const char *name, size_t modoffs, void *data)
 {
@@ -181,6 +182,7 @@ search_syms_cb(const char *name, size_t modoffs, void *data)
     *ans = modoffs;
     return false; /* stop iterating: we want first match */
 }
+# endif
 
 static app_pc
 lookup_symbol_common(const module_data_t *mod, const char *sym_pattern,
@@ -235,6 +237,7 @@ lookup_symbol_common(const module_data_t *mod, const char *sym_pattern,
     IF_WINDOWS(ASSERT(using_private_peb(), "private peb not preserved"));
 
     /* We rely on drsym_init() having been called during init */
+#ifdef WINDOWS
     if (full) {
         /* A SymSearch full search is slower than SymFromName */
         symres = drsym_lookup_symbol(mod->full_path, sym_with_mod, &modoffs,
@@ -248,6 +251,10 @@ lookup_symbol_common(const module_data_t *mod, const char *sym_pattern,
                                       callback == NULL ? search_syms_cb : callback,
                                       callback == NULL ? &modoffs : data);
     }
+#else /* LINUX */
+    symres = drsym_lookup_symbol(mod->full_path, sym_with_mod, &modoffs,
+                                 DRSYM_DEMANGLE);
+#endif
     LOG(2, "sym lookup of %s in %s => %d "PFX"\n", sym_with_mod, mod->full_path,
         symres, modoffs);
     if (symres == DRSYM_SUCCESS || symres == DRSYM_ERROR_LINE_NOT_AVAILABLE) {
@@ -1159,7 +1166,7 @@ utils_init(void)
 #endif
 
 #ifdef USE_DRSYMS
-    if (drsym_init(NULL) != DRSYM_SUCCESS) {
+    if (drsym_init(0) != DRSYM_SUCCESS) {
         LOG(1, "WARNING: unable to initialize symbol translation\n");
     }
 #endif
