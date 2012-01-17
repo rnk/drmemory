@@ -832,7 +832,8 @@ endif (PERL_TO_EXE)
 
 # support running out of build dir
 file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/logs")
-if (NOT PERL_TO_EXE AND NOT USE_DRSYMS)
+if (NOT PERL_TO_EXE AND NOT USE_DRSYMS OR UNIX)
+  message("configing scripts ${PROJECT_BINARY_DIR}/${BUILD_BIN_PREFIX}/${toolname}.pl")
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/${tooldir}/${toolname}.pl"
     "${PROJECT_BINARY_DIR}/${BUILD_BIN_PREFIX}/${toolname}.pl" @ONLY)
   if (NOT USE_DRSYMS)
@@ -842,7 +843,7 @@ if (NOT PERL_TO_EXE AND NOT USE_DRSYMS)
   endif (NOT USE_DRSYMS)
   set(script_main "${PROJECT_BINARY_DIR}/${BUILD_BIN_PREFIX}/${toolname}.pl"
     "${options_for_perl}")
-endif (NOT PERL_TO_EXE AND NOT USE_DRSYMS)
+endif (NOT PERL_TO_EXE AND NOT USE_DRSYMS OR UNIX)
 if (WIN32)
   configure_file("${DBGHELP_DLL}"
     "${PROJECT_BINARY_DIR}/${BUILD_BIN}/dbghelp.dll" COPYONLY)

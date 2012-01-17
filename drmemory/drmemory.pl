@@ -128,6 +128,7 @@ my $aggregate = 0;
 my $use_default_suppress = 1;
 my $gen_suppress_offs = 1;
 my $gen_suppress_syms = 1;
+my $results_to_stderr = 0;
 my $skip_postprocess = 0;
 my $just_postprocess = 0;
 my $postprocess_apppath = "";
@@ -170,6 +171,8 @@ if (!GetOptions("dr=s" => \$dr_home,
                 "pid_file=s" => \$pid_file,
                 "use_vmtree!" => \$use_vmtree,
                 "aggregate" => \$aggregate,
+                # results file options
+                "results_to_stderr!" => \$results_to_stderr,
                 "skip_postprocess|skip_results" => \$skip_postprocess,
                 "results" => \$just_postprocess,
                 "results_app=s" => \$postprocess_apppath,
@@ -559,6 +562,7 @@ sub post_process()
     push @postcmd, "$exeop" if ($exeop ne '');
     push @postcmd, ("-dr_home", "$dr_home") if (!$is_unix && !$is_cygwin_perl);
     push @postcmd, "-use_vmtree" if ($use_vmtree);
+    push @postcmd, "-results_to_stderr" if ($results_to_stderr);
     push @postcmd, "$extraargs" if ($extraargs ne '');
     # Don't use suppress_drmem as perl option parsing doesn't like ``
     for ($i = 0; $i <= $#suppfiles; $i++) {
