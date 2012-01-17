@@ -768,9 +768,11 @@ if (WIN32 AND USE_DRSYMS)
   set_target_properties(${toolname} PROPERTIES
     VERSION ${TOOL_VERSION_NUMBER})
   set_property(TARGET ${toolname} PROPERTY COMPILE_DEFINITIONS ${DEFINES_NO_D})
-
-  use_DynamoRIO_extension(${client_target} drsyms)
 endif (WIN32 AND USE_DRSYMS)
+
+if (USE_DRSYMS)
+  use_DynamoRIO_extension(${client_target} drsyms)
+endif ()
 
 #
 ##################################################

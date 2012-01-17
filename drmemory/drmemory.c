@@ -1389,7 +1389,7 @@ dr_init(client_id_t id)
     utils_init();
 
     /* now that we know whether -quiet, print basic info */
-#ifdef USE_DRSYMS
+#if defined(WINDOWS) && defined(USE_DRSYMS)
     dr_enable_console_printing();
 #endif
     if (options.summary)

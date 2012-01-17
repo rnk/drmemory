@@ -2417,7 +2417,9 @@ handle_pre_execve(void *drcontext)
         if (bytes_read < BUFFER_SIZE_BYTES(logdir))
             logdir[bytes_read] = '\0';
         NULL_TERMINATE_BUFFER(logdir);
+#ifndef USE_DRSYMS
         ELOGF(0, f_fork, "EXEC path=%s\n", logdir);
+#endif /* USE_DRSYMS */
     }
 }
 
@@ -2457,6 +2459,7 @@ os_shared_post_syscall(void *drcontext, int sysnum)
         }
         /* else, fall through */
     }
+#ifndef USE_DRSYMS
     case SYS_fork: {
         /* PR 453867: tell postprocess.pl to not exit until it sees a message
          * from the child starting up.
@@ -2466,6 +2469,7 @@ os_shared_post_syscall(void *drcontext, int sysnum)
             ELOGF(0, f_fork, "FORK child=%d\n", child);
         break;
     }
+#endif /* USE_DRSYMS */
     }
 }
 

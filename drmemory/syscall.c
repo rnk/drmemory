@@ -250,16 +250,21 @@ auxlib_shared_pre_syscall(void *drcontext, int sysnum, dr_mcontext_t *mc)
 {
     per_thread_t *pt = (per_thread_t *) dr_get_tls_field(drcontext);
     client_per_thread_t *cpt = (client_per_thread_t *) pt->client_data;
-    char path[MAXIMUM_PATH];
     cpt->sysaux_params = sysauxlib_save_params(drcontext);
 #ifdef LINUX
     if (sysauxlib_is_fork(drcontext, cpt->sysaux_params, NULL)) {
         if (options.perturb)
             perturb_pre_fork();
-    } else if (sysauxlib_is_exec(drcontext, cpt->sysaux_params,
-                                 path, BUFFER_SIZE_BYTES(path)))
-        ELOGF(0, f_fork, "EXEC path=%s\n", path);
-#endif
+    }
+# ifndef USE_DRSYMS
+    else {
+        char path[MAXIMUM_PATH];
+        if (sysauxlib_is_exec(drcontext, cpt->sysaux_params,
+                              path, BUFFER_SIZE_BYTES(path)))
+            ELOGF(0, f_fork, "EXEC path=%s\n", path);
+    }
+# endif /* USE_DRSYMS */
+#endif /* LINUX */
     return true;
 }
 
@@ -268,12 +273,12 @@ auxlib_shared_post_syscall(void *drcontext, int sysnum, dr_mcontext_t *mc)
 {
     per_thread_t *pt = (per_thread_t *) dr_get_tls_field(drcontext);
     client_per_thread_t *cpt = (client_per_thread_t *) pt->client_data;
-    char path[MAXIMUM_PATH];
-    process_id_t child;
     ASSERT(cpt->sysaux_params != NULL, "params should already be saved");
-#ifdef LINUX
+#if defined(LINUX) && !defined(USE_DRSYMS)
     if (sysauxlib_is_fork(drcontext, cpt->sysaux_params, &child)) {
-       /* PR 453867: tell postprocess.pl to watch for child logdir and
+        char path[MAXIMUM_PATH];
+        process_id_t child;
+        /* PR 453867: tell postprocess.pl to watch for child logdir and
          * then fork a new copy.
          */
         if (sysauxlib_is_exec(drcontext, cpt->sysaux_params,
@@ -282,7 +287,7 @@ auxlib_shared_post_syscall(void *drcontext, int sysnum, dr_mcontext_t *mc)
         } else {
             ELOGF(0, f_fork, "FORK child=%d\n", child);
         }
-    } 
+    }
 #endif
 }
 

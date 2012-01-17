@@ -196,7 +196,7 @@ lookup_symbol_common(const module_data_t *mod, const char *sym_pattern,
     size_t modoffs;
     int len;
     drsym_error_t symres;
-    char *fname = NULL, *c;
+    char *fname = NULL, *c, *fname_end;
 
     if (mod->full_path == NULL)
         return NULL;
@@ -220,6 +220,7 @@ lookup_symbol_common(const module_data_t *mod, const char *sym_pattern,
         if (*c == DIRSEP IF_WINDOWS(|| *c == '\\'))
             fname = c + 1;
     }
+    fname_end = c;
     ASSERT(fname != NULL, "unable to get fname for module");
     if (fname == NULL)
         return NULL;
@@ -227,9 +228,15 @@ lookup_symbol_common(const module_data_t *mod, const char *sym_pattern,
     for (; c > fname && *c != '.'; c--)
         ; /* nothing */
 
+    /* If there was no extension, just take the whole basename. */
+    ASSERT(c >= fname, "char * bug");
+    if (c == fname)
+        c = fname_end;
+
     ASSERT(c - fname < BUFFER_SIZE_ELEMENTS(sym_with_mod), "sizes way off");
     len = dr_snprintf(sym_with_mod, c - fname, "%s", fname);
-    ASSERT(len == -1, "error printing modname!symname");
+    ASSERT(len == -1 || len == (int)(c - fname),
+           "error printing modname!symname");
     len = dr_snprintf(sym_with_mod + (c - fname),
                       BUFFER_SIZE_ELEMENTS(sym_with_mod) - (c - fname),
                       "!%s", sym_pattern);

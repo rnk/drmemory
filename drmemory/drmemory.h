@@ -40,11 +40,11 @@ extern client_id_t client_id;
 
 extern char logsubdir[MAXIMUM_PATH];
 
-extern file_t f_fork;
-
 #ifdef USE_DRSYMS
 extern file_t f_results;
 extern file_t f_suppress;
+#else
+extern file_t f_fork;
 #endif
 
 #ifdef WINDOWS
