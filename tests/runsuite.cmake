@@ -169,6 +169,20 @@ foreach (tool ${tools})
       " OFF ON "") # we do run some release tests in short suite
   endif (NOT arg_vmk_only)
   if (UNIX)
+    if ("${tool}" MATCHES "MEMORY")
+      testbuild("${name}-drsyms-dbg-32" OFF "
+        ${tool}
+        ${DR_entry}
+        CMAKE_BUILD_TYPE:STRING=Debug
+        USE_DRSYMS:BOOL=ON
+        ")
+      testbuild("${name}-drsyms-rel-32" OFF "
+        ${tool}
+        ${DR_entry}
+        CMAKE_BUILD_TYPE:STRING=Release
+        USE_DRSYMS:BOOL=ON
+        ")
+    endif()
     if (arg_vmk_only OR arg_test_vmk)
       testbuild_ex("${name}-vmk-dbg-32" OFF "
         ${tool}
