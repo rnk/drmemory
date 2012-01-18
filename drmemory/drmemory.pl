@@ -80,11 +80,15 @@ $perl2exe = (-e "$scriptpath/bin32/postprocess.exe") ? 1 : 0;
 # when using perl->exe we do not have a drmemory/bin subdir
 $drmem_bin_subdir = ($scriptpath =~ m|/drmemory/bin/?$|);
 # handle the top-level bin symlink being dereferenced (PR 527580)
-$symlink_deref = !$drmem_bin_subdir && (! -e "$scriptpath/bin32");
-$default_home = $symlink_deref ? "$scriptpath/../drmemory" : "$scriptpath/../";
+$symlink_deref = !$drmem_bin_subdir && !(-e "$scriptpath/bin32" ||
+                                         -e "$scriptpath/bin");
+if (-e "$scriptpath/bin") {
+    $default_home = "$scriptpath";
+} else {
+    $default_home = $symlink_deref ? "$scriptpath/../drmemory" : "$scriptpath/../";
+}
 $default_home = abs_path($default_home);
 $default_home = &canonicalize_path($default_home);
-$bindir = "bin/bin32";
 
 $drlibname = $is_unix ? "libdynamorio.so" : "dynamorio.dll";
 $drmemlibname = $is_unix ? "libdrmemory.so" : "drmemory.dll";
@@ -135,6 +139,8 @@ my $postprocess_apppath = "";
 my $follow_children = 1;
 my $callstack_style = $default_op_vals{"callstack_style"};
 my @suppfiles = ();
+# Controls whether we just launch drrun or if we set up postprocess.pl trees.
+my $use_drsyms = 0;
 
 # PR 527650: perl GetOptions negation prefix is -no or -no-
 # We add support for -no_ so that prefix can be used for both perl and client
@@ -157,6 +163,7 @@ for ($i = 0; $i <= $#ARGV; $i++) {
 Getopt::Long::Configure("pass_through");
 if (!GetOptions("dr=s" => \$dr_home,
                 "drmemory=s" => \$drmemory_home,
+                "use_drsyms!" => \$use_drsyms,
                 "srcfilter=s" => \$srcfilter,
                 "ops=s" => \$user_ops, # for backward compat only
                 "dr_ops=s" => \$dr_ops,
@@ -212,10 +219,17 @@ die "$usage\n" if ($postprocess_apppath ne '' && !$just_postprocess);
 
 $dr_home = &canonicalize_path($dr_home);
 $drmemory_home = &canonicalize_path($drmemory_home);
+print "drmemory_home: $drmemory_home\n";
 for ($i = 0; $i <= $#suppfiles; $i++) {
     $suppfiles[$i] = &canonicalize_path($suppfiles[$i]);
 }
 $logdir = &canonicalize_path($logdir);
+
+if ($use_drsyms) {
+    $bindir = "bin";
+} else {
+    $bindir = "bin/bin32";
+}
 
 if (!$use_debug && ! -e "$drmemory_home/$bindir/release/$drmemlibname") {
     $use_debug = 1;
@@ -404,25 +418,30 @@ if ($aggregate || $just_postprocess) {
     exit 0;
 }
 
-# PR 425335: we must run the app in the foreground (in case takes stdin)
-# so we run the rest of our script sideline
-if (!$is_unix && !$is_cygwin_perl) {
-    # pp-produced .exe crashes on exit from child of fork
-    $using_threads = 1;
-    eval "use threads ()";
-    $child = threads->create(\&post_process);
-} else {
-    $using_threads = 0;
-    unless (fork()) {
-        # PR 511242: Ctrl-C on an app launched with drmemory.pl should only
-        # terminate the app, not postprocess.pl, to avoid an incomplete results
-        # file.  By default the shell terminates all processes in the app's
-        # group, so we move postprocess to its own group.  If we want headless
-        # support we can change this to setsid.
-        setpgrp(0,0) or die "Unable to setpgrp\n";
-        &post_process();
-        exit 0;
+# Only post process if we're not using drsyms.
+if (!$use_drsyms) {
+    # PR 425335: we must run the app in the foreground (in case takes stdin)
+    # so we run the rest of our script sideline
+    if (!$is_unix && !$is_cygwin_perl) {
+        # pp-produced .exe crashes on exit from child of fork
+        $using_threads = 1;
+        eval "use threads ()";
+        $child = threads->create(\&post_process);
+    } else {
+        $using_threads = 0;
+        unless (fork()) {
+            # PR 511242: Ctrl-C on an app launched with drmemory.pl should only
+            # terminate the app, not postprocess.pl, to avoid an incomplete results
+            # file.  By default the shell terminates all processes in the app's
+            # group, so we move postprocess to its own group.  If we want headless
+            # support we can change this to setsid.
+            setpgrp(0,0) or die "Unable to setpgrp\n";
+            &post_process();
+            exit 0;
+        }
     }
+} else {
+    print "skipping post process, using drsyms symbolization.\n";
 }
 
 print "running app: \"".join(' ',@appcmdline)."\"\n" if ($verbose);

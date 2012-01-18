@@ -86,13 +86,14 @@ endif (WIN32)
 
 # For more portable testing (PR 544430):
 # 1) use relative dirs within parent build dir
-if (USE_DRSYMS)
+if (USE_DRSYMS AND WIN32)
   file(RELATIVE_PATH bin_relative "${CMAKE_CURRENT_BINARY_DIR}"
     "${PROJECT_BINARY_DIR}/${BUILD_BIN_PREFIX}/bin")
-else (USE_DRSYMS)
+else ()
   file(RELATIVE_PATH bin_relative "${CMAKE_CURRENT_BINARY_DIR}"
     "${PROJECT_BINARY_DIR}/${BUILD_BIN_PREFIX}")
-endif (USE_DRSYMS)
+endif ()
+message("${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_BINARY_DIR} ${bin_relative}")
 # 2) parameterize dirs outside of build dir
 set(src_param_pattern "{DRMEMORY_CTEST_SRC_DIR}")
 set(DR_param_pattern "{DRMEMORY_CTEST_DR_DIR}")
@@ -210,6 +211,9 @@ function(newtest_nobuild test exe test_ops drmem_ops dr_ops postprocess resbase)
   # we include absaddr and mod+offs for easier debugging of problems
   if (USE_DRSYMS)
     set(drmem_ops -callstack_style 0x27 -no_results_to_stderr ${drmem_ops})
+    if (UNIX)
+      set(drmem_ops -use_drsyms ${drmem_ops})
+    endif ()
   else (USE_DRSYMS)
     set(drmem_ops -callstack_style 0x27 ${drmem_ops})
   endif (USE_DRSYMS)
