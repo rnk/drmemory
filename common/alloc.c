@@ -1307,10 +1307,13 @@ typedef struct _set_enum_data_t {
 static void
 add_to_alloc_set(set_enum_data_t *edata, byte *pc, uint idx)
 {
-    const char *modname = dr_module_preferred_name(edata->mod);
+    const char *modname;
+    dr_printf("edata: "PFX", pc: "PFX"\n", (ptr_int_t)edata, (ptr_int_t)pc);
+    ASSERT(edata != NULL && pc != NULL, "invalid params");
+
+    modname = dr_module_preferred_name(edata->mod);
     if (modname == NULL)
         modname = "<noname>";
-    ASSERT(edata != NULL && pc != NULL, "invalid params");
     /* look for partial map (i#730) */
     if (pc >= edata->mod->end) {
         LOG(1, "NOT intercepting %s @"PFX" beyond end of mapping for module %s\n",
@@ -1374,8 +1377,12 @@ enumerate_set_syms_cb(const char *name, size_t modoffs, void *data)
                     (edata->mod->start, edata->mod->end, modoffs);
             }
 #endif
-            if (modoffs != 0)
+            if (modoffs != 0) {
+                if (edata->mod->start + modoffs == 0) {
+                    dr_printf("modoffs: %ld\n", modoffs);
+                }
                 add_to_alloc_set(edata, edata->mod->start + modoffs, i);
+            }
             break;
         }
     }
@@ -1474,8 +1481,12 @@ find_alloc_routines(const module_data_t *mod, const possible_alloc_routine_t *po
                                                     idx, &modoffs, &count); idx++) {
                     STATS_INC(symbol_search_cache_hits);
                     edata.processed[i] = true;
-                    if (modoffs != 0)
+                    if (modoffs != 0) {
+                        if (mod->start + modoffs == 0) {
+                            dr_printf("modoffs: %ld\n", modoffs);
+                        }
                         add_to_alloc_set(&edata, mod->start + modoffs, i);
+                    }
                 }
                 if (all_processed && !edata.processed[i])
                     all_processed = false;
