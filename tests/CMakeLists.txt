@@ -93,7 +93,6 @@ else ()
   file(RELATIVE_PATH bin_relative "${CMAKE_CURRENT_BINARY_DIR}"
     "${PROJECT_BINARY_DIR}/${BUILD_BIN_PREFIX}")
 endif ()
-message("${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_BINARY_DIR} ${bin_relative}")
 # 2) parameterize dirs outside of build dir
 set(src_param_pattern "{DRMEMORY_CTEST_SRC_DIR}")
 set(DR_param_pattern "{DRMEMORY_CTEST_DR_DIR}")
