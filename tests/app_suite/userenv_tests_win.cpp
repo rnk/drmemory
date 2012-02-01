@@ -20,16 +20,20 @@
  */
 
 #include <windows.h>
+#include <userenv.h>
 
 #include "gtest/gtest.h"
 
-TEST(ProcessTests, CreateEnvironmentBlock) {
+// userenv.dll is required for CreateEnvironmentBlock().
+#pragma comment(lib, "userenv.lib")
+
+TEST(UserEnvTests, CreateEnvironmentBlock) {
     HANDLE token;
     void* enviroment_block = NULL;
     BOOL success;
     success = OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &token);
     ASSERT_TRUE(success) << "OpenProcessToken failed: " << GetLastError();
-    success = CreateEnvironmentBlock(&enviroment_block, options.as_user, FALSE);
+    success = CreateEnvironmentBlock(&enviroment_block, token, FALSE);
     ASSERT_TRUE(success) << "CreateEnvironmentBlock failed: " << GetLastError();
     DestroyEnvironmentBlock(enviroment_block);
 }
