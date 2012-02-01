@@ -545,3 +545,21 @@ GDI32.dll!DeleteDC
 RICHED20.dll!...
 ntdll.dll!...
 ntdll.dll!LdrShutdownProcess
+
+##################################################
+# i#757: RPC handle leaks in sspicli.dll
+LEAK
+name=default i#757: RPC handle leaks in sspicli.dll
+RPCRT4.dll!...
+RPCRT4.dll!I_RpcAllocate
+RPCRT4.dll!...
+SspiCli.dll!*
+SspiCli.dll!CreateRpcConnection
+
+LEAK
+name=default i#757: RPC handle leaks in sspicli.dll (nosyms)
+RPCRT4.dll!...
+RPCRT4.dll!I_RpcAllocate
+RPCRT4.dll!...
+SspiCli.dll!*
+SspiCli.dll!CredUnmarshalTargetInfo
