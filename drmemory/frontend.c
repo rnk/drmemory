@@ -1046,12 +1046,11 @@ int main(int argc, char *argv[])
      */
     app_argv = &argv[i];
     if (verbose) {
+        int j;
         c = buf;
-        c += _snprintf(c, BUFFER_SIZE_ELEMENTS(buf) - (c - buf),
-                       "\"%s\"", app_name);
-        for (; i < argc; i++) {
+        for (j = 0; app_argv[j] != NULL; j++) {
             c += _snprintf(c, BUFFER_SIZE_ELEMENTS(buf) - (c - buf),
-                           " \"%s\"", argv[i]);
+                           "\"%s\" ", app_argv[j]);
         }
         NULL_TERMINATE_BUFFER(buf);
         assert(c - buf < BUFFER_SIZE_ELEMENTS(buf));
