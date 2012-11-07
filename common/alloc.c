@@ -700,6 +700,8 @@ struct _alloc_routine_set_t {
     byte *realloc_replacement;
     /* For simpler removal on module unload */
     app_pc modbase;
+    /* Is this msvcr* or libc*? */
+    bool is_libc;
     /* For i#643 */
     bool check_mismatch;
     /* For i#939, let wrap/replace store a field per malloc set */
@@ -1123,12 +1125,15 @@ replaced_nop_true_routine(void)
 #endif
 
 static app_pc
-lookup_symbol_or_export(const module_data_t *mod, const char *name)
+lookup_symbol_or_export(const module_data_t *mod, const char *name, bool internal)
 {
 #ifdef USE_DRSYMS
     app_pc res;
     if (mod->full_path != NULL) {
-        res = lookup_symbol(mod, name);
+        if (internal)
+            res = lookup_internal_symbol(mod, name);
+        else
+            res = lookup_symbol(mod, name);
         if (res != NULL)
             return res;
     }
@@ -1509,7 +1514,7 @@ distinguish_operator_no_argtypes(routine_type_t generic_type,
  */
 static routine_type_t
 distinguish_operator_type(routine_type_t generic_type,  const char *name,
-                          const module_data_t *mod, size_t modoffs)
+                          const module_data_t *mod, drsym_info_t *info)
 {
     size_t bufsz = 256; /* even w/ class names, should be big enough for most operators */
     char *buf;
@@ -1527,7 +1532,9 @@ distinguish_operator_type(routine_type_t generic_type,  const char *name,
 
     buf = (char *) global_alloc(bufsz, HEAPSTAT_MISC);
     do {
-        err = drsym_get_func_type(mod->full_path, modoffs, buf, bufsz, &func_type);
+        err = drsym_expand_type(mod->full_path, info->type_id, 
+                                2 /* for func_type, arg_type, elt_type */,
+                                buf, bufsz, (drsym_type_t **)&func_type);
         if (err != DRSYM_ERROR_NOMEM)
             break;
         global_free(buf, bufsz, HEAPSTAT_MISC);
@@ -1536,7 +1543,7 @@ distinguish_operator_type(routine_type_t generic_type,  const char *name,
     } while (true);
 
     LOG(2, "%s in %s @"PFX" generic type=%d => drsyms res=%d, %d args\n",
-        name, modname, mod->start + modoffs, generic_type, err,
+        name, modname, mod->start + info->start_offs, generic_type, err,
         err == DRSYM_SUCCESS ? func_type->num_args : -1);
 
     if (err != DRSYM_SUCCESS) {
@@ -1559,7 +1566,7 @@ distinguish_operator_type(routine_type_t generic_type,  const char *name,
                 specific_type = convert_operator_to_nothrow(generic_type);
                 known = true;
                 LOG(2, "operator %s in %s @"PFX" assumed to be nothrow\n",
-                    name, modname, mod->start + modoffs);
+                    name, modname, mod->start + info->start_offs);
             } else if (arg_type->elt_type->kind == DRSYM_TYPE_VOID ||
                        arg_type->elt_type->kind == DRSYM_TYPE_INT) {
                 /* We assume that this is placement new or delete.
@@ -1572,7 +1579,7 @@ distinguish_operator_type(routine_type_t generic_type,  const char *name,
                 specific_type = HEAP_ROUTINE_INVALID;
                 known = true;
                 LOG(2, "%s in %s @"PFX" assumed to be placement\n",
-                    name, modname, mod->start + modoffs);
+                    name, modname, mod->start + info->start_offs);
             }
         }
         if (!known) {
@@ -1580,7 +1587,7 @@ distinguish_operator_type(routine_type_t generic_type,  const char *name,
              * as not being placement.
              */
             WARN("WARNING: unknown 2-arg overload of %s in %s @"PFX"\n",
-                 name, modname, mod->start + modoffs);
+                 name, modname, mod->start + info->start_offs);
             specific_type = generic_type;
         }
     } else {
@@ -1599,13 +1606,13 @@ distinguish_operator_type(routine_type_t generic_type,  const char *name,
          * i#607 part D) or we may encounter a weird overload.
          */
         known = distinguish_operator_no_argtypes(generic_type, &specific_type,
-                                                 name, mod, modoffs);
+                                                 name, mod, info->start_offs);
         if (known) {
             LOG(2, "%s in %s @"PFX" determined to be type=%d\n",
-                name, modname, mod->start + modoffs, specific_type);
+                name, modname, mod->start + info->start_offs, specific_type);
         } else {
             WARN("WARNING: unable to determine args for operator %s in %s @"PFX"\n",
-                 name, modname, mod->start + modoffs);
+                 name, modname, mod->start + info->start_offs);
             specific_type = generic_type;
         }
     }
@@ -1628,6 +1635,8 @@ typedef struct _set_enum_data_t {
     /* if a wildcard lookup */
     const char *wildcard_name;
     const module_data_t *mod;
+    bool is_libc;
+    bool is_libcpp;
     /* points at libc set, for pairing up dbgcrt and crt */
     alloc_routine_set_t *set_libc;
 } set_enum_data_t;
@@ -1661,6 +1670,7 @@ add_to_alloc_set(set_enum_data_t *edata, byte *pc, uint idx)
         edata->set->type = edata->set_type;
         edata->set->check_mismatch = edata->check_mismatch;
         edata->set->set_libc = edata->set_libc;
+        edata->set->is_libc = edata->is_libc;
     }
     add_alloc_routine(pc, edata->possible[idx].type, edata->possible[idx].name,
                       edata->set, edata->mod->start, modname);
@@ -1679,11 +1689,16 @@ add_to_alloc_set(set_enum_data_t *edata, byte *pc, uint idx)
  * and strcmp to identify precise targets (i#315).
  */
 static bool
-enumerate_set_syms_cb(const char *name, size_t modoffs, void *data)
+enumerate_set_syms_cb(drsym_info_t *info, drsym_error_t status, void *data)
 {
     uint i, add_idx;
     set_enum_data_t *edata = (set_enum_data_t *) data;
+    const char *name = info->name;
+    size_t modoffs = info->start_offs;
+
     ASSERT(edata != NULL && edata->processed != NULL, "invalid param");
+    ASSERT(status == DRSYM_SUCCESS || status == DRSYM_ERROR_LINE_NOT_AVAILABLE,
+           "drsym operation failed");
     LOG(2, "%s: %s "PIFX"\n", __FUNCTION__, name, modoffs);
     for (i = 0; i < edata->num_possible; i++) {
         /* We do not check !edata->processed[i] b/c we want all copies.
@@ -1719,7 +1734,7 @@ enumerate_set_syms_cb(const char *name, size_t modoffs, void *data)
                 /* Distinguish placement and nothrow new and delete. */
                 routine_type_t op_type = distinguish_operator_type
                     (edata->possible[i].type, edata->possible[i].name, edata->mod,
-                     modoffs);
+                     info);
                 if (op_type == HEAP_ROUTINE_INVALID)
                     modoffs = 0; /* skip */
                 else if (op_type != edata->possible[i].type) {
@@ -1751,10 +1766,15 @@ find_alloc_regex(set_enum_data_t *edata, const char *regex,
     uint i;
     bool full = false;
 # ifdef WINDOWS
-    if (edata->mod->start == get_libc_base(NULL) ||
-        edata->mod->start == get_libcpp_base()) {
+    if (edata->is_libc || edata->is_libcpp) {
         /* The _calloc_impl in msvcr*.dll is private (i#960) */
         /* The std::_DebugHeapDelete<> (i#722) in msvcp*.dll is private (i#607 part C) */
+        /* XXX: really for MTd we should do full as well for possible_crtdbg_routines
+         * in particular, and technically for possible_cpp_routines and
+         * in fact for libc routines too b/c of _calloc_impl?
+         * But we don't want to pay the cost on large apps.  Leaving code
+         * as is for now.
+         */
         LOG(2, "%s: doing full symbol lookup for libc/libc++\n", __FUNCTION__);
         full = true;
     }
@@ -1773,7 +1793,7 @@ find_alloc_regex(set_enum_data_t *edata, const char *regex,
                  * long) so we always try an export lookup
                  */
                 /* can't look up wildcard in exports */
-                if (edata->wildcard_name != NULL)
+                if (edata->wildcard_name == NULL)
                     pc = (app_pc) dr_get_proc_address(edata->mod->handle, name);
                 if (pc != NULL) {
                     LOG(2, "regex didn't match %s but it's an export\n", name);
@@ -1868,7 +1888,8 @@ find_RtlFreeStringRoutine(const module_data_t *mod)
 static alloc_routine_set_t *
 find_alloc_routines(const module_data_t *mod, const possible_alloc_routine_t *possible,
                     uint num_possible, bool use_redzone, bool check_mismatch,
-                    bool expect_all, heapset_type_t type, alloc_routine_set_t *set_libc)
+                    bool expect_all, heapset_type_t type, alloc_routine_set_t *set_libc,
+                    bool is_libc, bool is_libcpp)
 {
     set_enum_data_t edata;
     uint i;
@@ -1885,6 +1906,8 @@ find_alloc_routines(const module_data_t *mod, const possible_alloc_routine_t *po
     edata.processed = NULL;
     edata.wildcard_name = NULL;
     edata.set_libc = set_libc;
+    edata.is_libc = is_libc;
+    edata.is_libcpp = is_libcpp;
 #ifdef USE_DRSYMS
     /* Symbol lookup is expensive for large apps so we batch some
      * requests together using regex symbol lookup, which cuts the
@@ -1999,7 +2022,18 @@ find_alloc_routines(const module_data_t *mod, const possible_alloc_routine_t *po
             name = possible[i - OPERATOR_ENTRIES].name;
         }
 #endif
-        pc = lookup_symbol_or_export(mod, name);
+        pc = lookup_symbol_or_export(mod, name,
+                                     /* We need internal syms for dbg routines */
+#ifdef WINDOWS
+                                     (possible == possible_crtdbg_routines ||
+                                      /* i#960 */
+                                      strcmp(name, "_calloc_impl") == 0 ||
+                                      /* i#607 part C */
+                                      possible[i].type == HEAP_ROUTINE_DebugHeapDelete)
+#else
+                                     false
+#endif
+                                     );
         ASSERT(!expect_all || pc != NULL, "expect to find all alloc routines");
 #ifdef LINUX
         /* PR 604274: sometimes undefined symbol has a value pointing at PLT:
@@ -2410,8 +2444,12 @@ enum {
     MALLOC_RTL_INTERNAL        = MALLOC_RESERVED_6,
     /* i#607 part A: try to handle msvc*d.dll w/o syms */
     MALLOC_LIBC_INTERNAL_ALLOC = MALLOC_RESERVED_7,
+    MALLOC_CONTAINS_LIBC_ALLOC = MALLOC_RESERVED_8,
     /* The rest are reserved for future use */
 };
+
+#define MALLOC_VISIBLE(flags) \
+    (TEST(MALLOC_VALID, flags) && !TEST(MALLOC_LIBC_INTERNAL_ALLOC, flags))
 
 /* We could save space by storing this in the redzone, if big enough,
  * though we'd have to squash app writes there (on that note we're not
@@ -2582,7 +2620,7 @@ alloc_exit(void)
         hash_entry_t *he;
         for (he = malloc_table.table[i]; he != NULL; he = he->next) {
             malloc_entry_t *e = (malloc_entry_t *) he->payload;
-            if (TEST(MALLOC_VALID, e->flags) && !malloc_entry_is_native(e)) {
+            if (MALLOC_VISIBLE(e->flags) && !malloc_entry_is_native(e)) {
                 client_exit_iter_chunk(e->start, e->end, TEST(MALLOC_PRE_US, e->flags),
                                        e->flags, e->data);
             }
@@ -2693,7 +2731,7 @@ alloc_find_syscalls(void *drcontext, const module_data_t *info)
                 find_alloc_routines(info, possible_rtl_routines,
                                     POSSIBLE_RTL_ROUTINE_NUM, true/*redzone*/,
                                     true/*mismatch*/, false/*may not see all*/,
-                                    HEAPSET_RTL, NULL);
+                                    HEAPSET_RTL, NULL, false/*!libc*/, false/*!libcpp*/);
                 dr_mutex_unlock(alloc_routine_lock);
             }
         }
@@ -2754,6 +2792,38 @@ module_has_pdb(const module_data_t *info)
 }
 #endif
 
+/* This routine tries to minimize name string comparisons.  We also
+ * don't want to use get_libc_base() on Windows b/c there are sometime
+ * multiples libc modules and they can be loaded dynamically; nor do
+ * we want to turn get_libc_base() into an interval tree that monitors
+ * module load and unload.
+ * Xref i#1059.
+ */
+static void
+module_is_libc(const module_data_t *mod, bool *is_libc, bool *is_libcpp, bool *is_debug)
+{
+    const char *modname = dr_module_preferred_name(mod);
+    *is_debug = false;
+    *is_libc = false;
+    *is_libcpp = false;
+    if (modname != NULL) {
+#ifdef LINUX
+        if (text_matches_pattern(modname, "libc*", false))
+            *is_libc = true;
+#else
+        if (text_matches_pattern(modname, "msvcr*.dll", true/*ignore case*/)) {
+            *is_libc = true;
+            if (text_matches_pattern(modname, "msvcr*d.dll", true/*ignore case*/))
+                *is_debug = true;
+        } else if (text_matches_pattern(modname, "msvcp*.dll", true/*ignore case*/)) {
+            *is_libcpp = true;
+            if (text_matches_pattern(modname, "msvcp*d.dll", true/*ignore case*/))
+                *is_debug = true;
+        }
+#endif
+    }
+}
+
 void
 alloc_module_load(void *drcontext, const module_data_t *info, bool loaded)
 {
@@ -2766,6 +2836,8 @@ alloc_module_load(void *drcontext, const module_data_t *info, bool loaded)
 #endif
     bool search_syms = true, search_libc_syms = true;
     const char *modname = dr_module_preferred_name(info);
+    bool is_libc, is_libcpp, is_debug;
+    module_is_libc(info, &is_libc, &is_libcpp, &is_debug);
 
 #ifdef WINDOWS
     alloc_find_syscalls(drcontext, info);
@@ -2779,9 +2851,7 @@ alloc_module_load(void *drcontext, const module_data_t *info, bool loaded)
 #ifdef WINDOWS
     if (alloc_ops.skip_msvc_importers && search_syms &&
         module_imports_from_msvc(info) &&
-        (modname == NULL ||
-         (!text_matches_pattern(modname, "msvcp*.dll", true/*ignore case*/) &&
-          !text_matches_pattern(modname, "msvcr*.dll", true/*ignore case*/)))) {
+        !is_libc && !is_libcpp) {
         /* i#963: assume there are no static libc routines if the module
          * imports from dynamic libc (unless it's dynamic C++ lib).
          * Note that we'll still pay the cost of loading the module for
@@ -2805,8 +2875,7 @@ alloc_module_load(void *drcontext, const module_data_t *info, bool loaded)
 
 #ifdef WINDOWS
         /* match msvcrtd.dll and msvcrNNd.dll */
-        if (modname != NULL &&
-            text_matches_pattern(modname, "msvcr*d.dll", true/*ignore case*/)) {
+        if (is_libc && is_debug) {
             if (!module_has_pdb(info)) {
                 if (alloc_ops.replace_malloc) {
                     /* FIXME i#607 part A for replacing: we don't yet have the
@@ -2828,8 +2897,7 @@ alloc_module_load(void *drcontext, const module_data_t *info, bool loaded)
                     dbgcrt_nosyms = true;
                 }
             }
-        } else if (modname != NULL &&
-                   text_matches_pattern(modname, "msvcp*d.dll", true/*ignore case*/)) {
+        } else if (is_libcpp && is_debug) {
             dbgcpp = true;
             if (!module_has_pdb(info)) {
                 /* i#607 part C: w/o symbols we have to disable
@@ -2845,7 +2913,8 @@ alloc_module_load(void *drcontext, const module_data_t *info, bool loaded)
 
         dr_mutex_lock(alloc_routine_lock);
 #ifdef WINDOWS
-        if (search_libc_syms && lookup_symbol_or_export(info, "_malloc_dbg") != NULL) {
+        if (search_libc_syms &&
+            lookup_symbol_or_export(info, "_malloc_dbg", true) != NULL) {
             if (modname == NULL ||
                 !text_matches_pattern(modname, "msvcrt.dll", true/*ignore case*/)) {
                 /* i#500: debug operator new calls either malloc, which calls
@@ -2874,7 +2943,11 @@ alloc_module_load(void *drcontext, const module_data_t *info, bool loaded)
             set_libc = find_alloc_routines(info, possible_libc_routines,
                                            POSSIBLE_LIBC_ROUTINE_NUM, use_redzone,
                                            true/*mismatch*/, false/*!expect all*/,
-                                           HEAPSET_LIBC, NULL);
+                                           HEAPSET_LIBC, NULL, is_libc, is_libcpp);
+            /* XXX i#1059: if there are multiple msvcr* dll's, we use the order
+             * chosen by get_libc_base().  Really we should support arbitrary
+             * numbers and find the specific sets used.
+             */
             if (info->start == get_libc_base(NULL)) {
                 if (set_dyn_libc != NULL)
                     WARN("WARNING: two libcs found");
@@ -2898,7 +2971,7 @@ alloc_module_load(void *drcontext, const module_data_t *info, bool loaded)
                 find_alloc_routines(info, possible_crtdbg_routines,
                                     POSSIBLE_CRTDBG_ROUTINE_NUM, false/*no redzone*/,
                                     true/*mismatch*/, false/*!expect all*/,
-                                    HEAPSET_LIBC_DBG, set_libc);
+                                    HEAPSET_LIBC_DBG, set_libc, is_libc, is_libcpp);
             /* XXX i#967: not sure this is right: some malloc calls,
              * or operator new, might use shared libc?
              */
@@ -2935,7 +3008,8 @@ alloc_module_load(void *drcontext, const module_data_t *info, bool loaded)
                                           IF_WINDOWS_ELSE(!dbgcpp_nosyms, true),
                                           false/*!expect all*/,
                                           IF_WINDOWS(is_dbg ? HEAPSET_CPP_DBG :)
-                                          HEAPSET_CPP, corresponding_libc);
+                                          HEAPSET_CPP, corresponding_libc,
+                                          is_libc, is_libcpp);
         }
         if (set_cpp != NULL) {
             /* for static, use corresponding libc for size.
@@ -3366,6 +3440,17 @@ malloc_entry_remove(malloc_entry_t *e)
             malloc_large_remove(e->start);
         }
     }
+#ifdef WINDOWS
+    /* If we were wrong about this containing a missed-alloc inner libc alloc,
+     * we should remove the fake inner entry now (i#1072).
+     * If we were right, the inner entry will already be gone and this will be
+     * a nop.
+     */
+    if (TEST(MALLOC_CONTAINS_LIBC_ALLOC, e->flags)) {
+        ASSERT(e->start + DBGCRT_PRE_REDZONE_SIZE < e->end, "invalid internal alloc");
+        hashtable_remove(&malloc_table, e->start + DBGCRT_PRE_REDZONE_SIZE);
+    }
+#endif
     if (hashtable_remove(&malloc_table, e->start)) {
 #ifdef STATISTICS
         if (!native)
@@ -3461,7 +3546,7 @@ static bool
 malloc_entry_is_pre_us(malloc_entry_t *e, bool ok_if_invalid)
 {
     return (TEST(MALLOC_PRE_US, e->flags) &&
-            (TEST(MALLOC_VALID, e->flags) || ok_if_invalid));
+            (MALLOC_VISIBLE(e->flags) || ok_if_invalid));
 }
 
 #ifdef WINDOWS
@@ -3579,7 +3664,7 @@ static bool
 malloc_entry_exists_racy_nolock(app_pc start)
 {
     malloc_entry_t *e = (malloc_entry_t *) hashtable_lookup(&malloc_table, (void *) start);
-    return (e != NULL && TEST(MALLOC_VALID, e->flags));
+    return (e != NULL && MALLOC_VISIBLE(e->flags));
 }
 #endif
 
@@ -3590,7 +3675,7 @@ malloc_wrap__end(app_pc start)
     malloc_entry_t *e;
     bool locked_by_me = malloc_lock_if_not_held_by_me();
     e = (malloc_entry_t *) hashtable_lookup(&malloc_table, (void *) start);
-    if (e != NULL && TEST(MALLOC_VALID, e->flags))
+    if (e != NULL && MALLOC_VISIBLE(e->flags))
         end = e->end;
     malloc_unlock_if_locked_by_me(locked_by_me);
     return end;
@@ -3604,7 +3689,7 @@ malloc_wrap__size(app_pc start)
     malloc_entry_t *e;
     bool locked_by_me = malloc_lock_if_not_held_by_me();
     e = (malloc_entry_t *) hashtable_lookup(&malloc_table, (void *) start);
-    if (e != NULL && TEST(MALLOC_VALID, e->flags))
+    if (e != NULL && MALLOC_VISIBLE(e->flags))
         sz = (e->end - start);
     malloc_unlock_if_locked_by_me(locked_by_me);
     return sz;
@@ -3694,7 +3779,7 @@ malloc_iterate_internal(bool include_native, malloc_iter_cb_t cb, void *iter_dat
             malloc_entry_t *e = (malloc_entry_t *) he->payload;
             /* support malloc_remove() while iterating */
             nxt = he->next;
-            if (TEST(MALLOC_VALID, e->flags) &&
+            if (MALLOC_VISIBLE(e->flags) &&
                 (include_native || !malloc_entry_is_native(e))) {
                 if (!cb(e->start, e->end, e->end + e->usable_extra,
                         TEST(MALLOC_PRE_US, e->flags),
@@ -4710,7 +4795,7 @@ handle_free_check_mismatch(void *drcontext, cls_alloc_t *pt, void *wrapcxt,
          * solution is to simply not report mismatches when the outer layer is
          * in msvcr*.dll and we're dealing with [] vs non-[].
          */
-        if (routine->set->modbase == get_libc_base(NULL) &&
+        if (routine->set->is_libc &&
             alloc_type != MALLOC_ALLOCATOR_MALLOC &&
             free_type != MALLOC_ALLOCATOR_MALLOC) {
             LOG(2, "ignoring operator mismatch b/c msvcr* is outer layer\n");
@@ -5248,7 +5333,10 @@ adjust_alloc_result(void *drcontext, cls_alloc_t *pt, void *wrapcxt,
 }
 
 #ifdef WINDOWS
-static void
+/* Returns malloc flags to add to the outer allocation.  Returns 0 if there is
+ * no inner alloc.
+ */
+static uint
 check_for_inner_libc_alloc(cls_alloc_t *pt, void *wrapcxt, dr_mcontext_t *mc,
                            alloc_routine_entry_t *routine, app_pc top_pc,
                            byte *app_base, size_t app_size)
@@ -5272,7 +5360,11 @@ check_for_inner_libc_alloc(cls_alloc_t *pt, void *wrapcxt, dr_mcontext_t *mc,
         LOG(2, "missed libc layer so marking as such\n");
         /* XXX: we're assuming this is a dbgcrt block but there's no way
          * to verify like we do during heap iteration (i#607 part B)
-         * b/c the fields are all uninit at this point
+         * b/c the fields are all uninit at this point.
+         * In fact we can be wrong for any libc routine that calls
+         * HeapAlloc instead of malloc, which happens with _chsize (i#1072).
+         * What we do is we mark the outer allocation and then remove the
+         * inner when the outer is removed.  Thus we can safely over-label.
          */
         if (app_size >= DBGCRT_PRE_REDZONE_SIZE + DBGCRT_POST_REDZONE_SIZE) {
             /* Skip the dbgcrt header */
@@ -5283,10 +5375,12 @@ check_for_inner_libc_alloc(cls_alloc_t *pt, void *wrapcxt, dr_mcontext_t *mc,
                 inner_start, inner_end);
             malloc_add_common(inner_start, inner_end, inner_end,
                               MALLOC_LIBC_INTERNAL_ALLOC, 0, mc, top_pc, pt->allocator);
+            return MALLOC_CONTAINS_LIBC_ALLOC;
         } else {
             WARN("WARNING: dbgcrt missed libc layer detected, but alloc too small");
         }
     }
+    return 0;
 }
 #endif
 
@@ -5324,12 +5418,13 @@ handle_malloc_post(void *drcontext, cls_alloc_t *pt, void *wrapcxt,
     } else {
         if (alloc_ops.record_allocs) {
             app_pc top_pc = set_mc_for_client(pt, wrapcxt, mc, post_call);
+            uint flags = 0;
 #ifdef WINDOWS
-            check_for_inner_libc_alloc(pt, wrapcxt, mc, routine, top_pc,
-                                       app_base, pt->alloc_size);
+            flags |= check_for_inner_libc_alloc(pt, wrapcxt, mc, routine, top_pc,
+                                                app_base, pt->alloc_size);
 #endif
             malloc_add_common(app_base, app_base + pt->alloc_size, real_base+pad_size,
-                              0, 0, mc, top_pc, pt->allocator);
+                              flags, 0, mc, top_pc, pt->allocator);
             restore_mc_for_client(pt, wrapcxt, mc);
         }
         client_handle_malloc(drcontext, app_base, pt->alloc_size, real_base,
@@ -5511,14 +5606,15 @@ handle_realloc_post(void *drcontext, cls_alloc_t *pt, void *wrapcxt,
             /* we can't remove the old one since it could have been
              * re-used already: so we leave it as invalid */
             app_pc top_pc = set_mc_for_client(pt, wrapcxt, mc, post_call);
+            uint flags = 0;
 #ifdef WINDOWS
-            check_for_inner_libc_alloc(pt, wrapcxt, mc, routine, top_pc,
-                                       app_base, pt->alloc_size);
+            flags |= check_for_inner_libc_alloc(pt, wrapcxt, mc, routine, top_pc,
+                                                app_base, pt->alloc_size);
 #endif
             malloc_add_common(app_base, app_base + pt->alloc_size,
                               real_base + 
                               (alloc_ops.get_padded_size ? pad_size : real_size),
-                              0, 0, mc, top_pc, pt->allocator);
+                              flags, 0, mc, top_pc, pt->allocator);
             restore_mc_for_client(pt, wrapcxt, mc);
             if (pt->alloc_size == 0) {
                 /* PR 493870: if realloc(non-NULL, 0) did allocate a chunk, mark
@@ -5639,12 +5735,13 @@ handle_calloc_post(void *drcontext, cls_alloc_t *pt, void *wrapcxt,
         handle_alloc_failure(pt->alloc_size, true, false, post_call, mc);
     } else {
         if (alloc_ops.record_allocs) {
+            uint flags = 0;
 #ifdef WINDOWS
-            check_for_inner_libc_alloc(pt, wrapcxt, mc, routine, post_call,
-                                       app_base, pt->alloc_size);
+            flags |= check_for_inner_libc_alloc(pt, wrapcxt, mc, routine, post_call,
+                                                app_base, pt->alloc_size);
 #endif
             malloc_add_common(app_base, app_base + pt->alloc_size, real_base+pad_size,
-                              0, 0, mc, post_call, pt->allocator);
+                              flags, 0, mc, post_call, pt->allocator);
         }
         client_handle_malloc(drcontext, app_base, pt->alloc_size, real_base,
                              /* if no padded size, use aligned real size */
