@@ -418,7 +418,7 @@ symcache_read_symfile(const module_data_t *mod, const char *modname, mod_cache_t
     for (; line != NULL && line < ((char *)map) + map_size; line = next_line) {
         const char *comma = strchr(line, ',');
         const char *newline = strchr(line, '\n');
-        size_t symlen = comma - line;
+        size_t symlen = (comma != NULL ? comma - line : 0);
         if (newline == NULL) {
             next_line = ((char *)map) + map_size + 1; /* handle EOF w/o trailing \n */
         } else {
@@ -429,7 +429,7 @@ symcache_read_symfile(const module_data_t *mod, const char *modname, mod_cache_t
             symbol[symlen] = '\0';
         }
         if (symlen < MAX_SYMLEN && symbol[0] != '\0' &&
-            dr_sscanf(comma, ",0x%x", symbol, (uint *)&offs) == 1) {
+            dr_sscanf(comma, ",0x%x", (uint *)&offs) == 1) {
             symcache_symbol_add(modname, symtable, symbol, offs);
         } else {
             WARN("WARNING: malformed symbol cache line \"%.*s\"\n",
