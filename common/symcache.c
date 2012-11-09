@@ -428,7 +428,7 @@ symcache_read_symfile(const module_data_t *mod, const char *modname, mod_cache_t
             strncpy(symbol, line, symlen);
             symbol[symlen] = '\0';
         }
-        if (symlen < MAX_SYMLEN && symbol[0] != '\0' &&
+        if (comma != NULL && symlen < MAX_SYMLEN && symbol[0] != '\0' &&
             dr_sscanf(comma, ",0x%x", (uint *)&offs) == 1) {
             symcache_symbol_add(modname, symtable, symbol, offs);
         } else {
