@@ -3427,9 +3427,7 @@ malloc_lookup(app_pc start)
 static void
 malloc_entry_remove(malloc_entry_t *e)
 {
-    app_pc start = NULL;
-    app_pc end = NULL;
-    app_pc real_end = NULL;
+    app_pc start, end, real_end;
     bool native = malloc_entry_is_native(e);
     ASSERT(e != NULL, "invalid arg");
     if (!native) {
