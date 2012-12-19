@@ -4356,7 +4356,7 @@ handle_UserMenuInfo(void *drcontext, cls_syscall_t *pt, sysarg_iter_info_t *ii)
                                 DRSYS_TYPE_INT, NULL))
             return;
     }
-    if (ii->arg->pre || set) {
+    if (ii->arg->pre || !set) {
         if (safe_read((byte *) pt->sysarg[3], sizeof(info), &info)) {
             if (!report_memarg_type(ii, 3, set ? SYSARG_READ : SYSARG_WRITE,
                                     (byte *) pt->sysarg[3], info.cbSize, "MENUINFOW",
