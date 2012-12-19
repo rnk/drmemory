@@ -628,6 +628,9 @@ report_memarg_ex(sysarg_iter_info_t *ii,
 {
     drsys_arg_t *arg = ii->arg;
 
+    if (!arg->pre)
+        ASSERT(TEST(DRSYS_PARAM_OUT, mode), "shouldn't see IN params in post");
+
     arg->type = type;
     if (type_name == NULL && type != DRSYS_TYPE_UNKNOWN &&
         type != DRSYS_TYPE_INVALID) {
