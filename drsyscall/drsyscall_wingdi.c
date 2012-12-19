@@ -4478,7 +4478,8 @@ handle_UserTrackMouseEvent(void *drcontext, cls_syscall_t *pt, sysarg_iter_info_
         safe = (TRACKMOUSEEVENT *) buf;
         /* XXX: for non-TME_QUERY are the other fields read? */
         flags = TEST(TME_QUERY, safe->dwFlags) ? SYSARG_WRITE : SYSARG_READ;
-        if (safe->cbSize > BUFFER_SIZE_BYTES(buf)) {
+        if ((flags == SYSARG_WRITE || ii->arg->pre) &&
+            safe->cbSize > BUFFER_SIZE_BYTES(buf)) {
             if (!report_memarg_type(ii, 0, flags,
                                     ((byte *)pt->sysarg[0]) + BUFFER_SIZE_BYTES(buf),
                                     safe->cbSize - BUFFER_SIZE_BYTES(buf),
