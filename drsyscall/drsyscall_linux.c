@@ -278,10 +278,18 @@ union ioctl_data {
 /* the cast is for sign extension for -1 sentinel */
 #define UNPACK_X64(packed) ((int)(short)((packed) >> 16))
 #define UNPACK_X86(packed) ((int)(short)((packed) & 0xffff))
+#ifdef X64
+# define UNPACK_NATIVE UNPACK_X64
+#else
+# define UNPACK_NATIVE UNPACK_X86
+#endif
 
 /* Table that maps system call number to a syscall_info_t* */
 #define SYSTABLE_HASH_BITS 9 /* ~2x the # of entries */
 hashtable_t systable;
+
+/* forward decl so "extern" */
+extern syscall_info_t syscall_ioctl_info[];
 
 /* Created from ./mksystable_linux.pl
  * And then manually:
@@ -482,7 +490,11 @@ static syscall_info_t syscall_info[] = {
      }
     },
     {{PACKNUM(-1,53),0},"ni_syscall", OK, RLONG, 0,},
-    {{PACKNUM(16,54),0},"ioctl", OK, RLONG, 3,}, /* varies: special-cased below */
+    {{PACKNUM(16,54),0},"ioctl", OK|SYSINFO_SECONDARY_TABLE, RLONG, 3,
+     {
+         {1,}  /* ioctl request number */
+     }, (drsys_sysnum_t*)syscall_ioctl_info
+    },
     {{PACKNUM(72,55),0},"fcntl", OK, RLONG, 2,}, /*special-cased: 3rd arg not always required*/
     {{PACKNUM(-1,56),0},"ni_syscall", OK, RLONG, 0,},
     {{PACKNUM(109,57),0},"setpgid", OK, RLONG, 2,},
@@ -1437,6 +1449,569 @@ static syscall_info_t syscall_info[] = {
     /* FIXME i#1019: add recently added linux syscalls */
 };
 
+#define NUM_SYSCALL_STATIC_ENTRIES (sizeof(syscall_info)/sizeof(syscall_info[0]))
+
+/* From "man ioctl_list" */
+/* FIXME: "Some ioctls take a pointer to a structure which contains
+ * additional pointers."  These are marked above with "FIXME: more".
+ * They are listed in the man page but I'm too lazy to add them just now.
+ */
+
+/* The "name" of the ioctl is the same as the request name.  To avoid long lines
+ * from repeating the request name we wrap it in a macro.
+ */
+#define IOCTL(request) {PACKNUM(16,54), request}, STRINGIFY(request)
+
+syscall_info_t syscall_ioctl_info[] = {
+    // <include/asm-i386/socket.h>
+    {IOCTL(FIOSETOWN), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(SIOCSPGRP), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(FIOGETOWN), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SIOCGPGRP), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SIOCATMARK), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SIOCGSTAMP), OK, RLONG, 4, {{2, sizeof(struct timeval), W}}},
+
+    // <include/asm-i386/termios.h>
+    {IOCTL(TCGETS), OK, RLONG, 4, {{2, sizeof(struct termios), W}}},
+    {IOCTL(TCSETS), OK, RLONG, 4, {{2, sizeof(struct termios), R}}},
+    {IOCTL(TCSETSW), OK, RLONG, 4, {{2, sizeof(struct termios ), R}}},
+    {IOCTL(TCSETSF), OK, RLONG, 4, {{2, sizeof(struct termios), R}}},
+    {IOCTL(TCGETA), OK, RLONG, 4, {{2, sizeof(struct termios), W}}},
+    {IOCTL(TCSETA), OK, RLONG, 4, {{2, sizeof(struct termios), R}}},
+    {IOCTL(TCSETAW), OK, RLONG, 4, {{2, sizeof(struct termios), R}}},
+    {IOCTL(TCSETAF), OK, RLONG, 4, {{2, sizeof(struct termios), R}}},
+    {IOCTL(TCSBRK), OK, RLONG, 4, /* int */},
+    {IOCTL(TCXONC), OK, RLONG, 4, /* int */},
+    {IOCTL(TCFLSH), OK, RLONG, 4, /* int */},
+    {IOCTL(TIOCEXCL), OK, RLONG, 4, /* void */},
+    {IOCTL(TIOCNXCL), OK, RLONG, 4, /* void */},
+    {IOCTL(TIOCSCTTY), OK, RLONG, 4, /* int */},
+    {IOCTL(TIOCGPGRP), OK, RLONG, 4, {{2, sizeof(pid_t), W}}},
+    {IOCTL(TIOCSPGRP), OK, RLONG, 4, {{2, sizeof(pid_t), R}}},
+    {IOCTL(TIOCOUTQ), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(TIOCSTI), OK, RLONG, 4, {{2, sizeof(char), R}}},
+    {IOCTL(TIOCGWINSZ), OK, RLONG, 4, {{2, sizeof(struct winsize), W}}},
+    {IOCTL(TIOCSWINSZ), OK, RLONG, 4, {{2, sizeof(struct winsize), R}}},
+    {IOCTL(TIOCMGET), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(TIOCMBIS), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(TIOCMBIC), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(TIOCMSET), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(TIOCGSOFTCAR), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(TIOCSSOFTCAR), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(TIOCINQ /*== FIONREAD*/), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(TIOCLINUX), OK, RLONG, 4, {{2, sizeof(char), R}}}, /* FIXME: more */
+    {IOCTL(TIOCCONS), OK, RLONG, 4, /* void */},
+    {IOCTL(TIOCGSERIAL), OK, RLONG, 4, {{2, sizeof(struct serial_struct), W}}},
+    {IOCTL(TIOCSSERIAL), OK, RLONG, 4, {{2, sizeof(struct serial_struct), R}}},
+    {IOCTL(TIOCPKT), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(FIONBIO), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(TIOCNOTTY), OK, RLONG, 4, /* void */},
+    {IOCTL(TIOCSETD), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(TIOCGETD), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(TCSBRKP), OK, RLONG, 4, /* int */},
+#if 0 /* FIXME: struct not in my headers */
+    {IOCTL(TIOCTTYGSTRUCT), OK, RLONG, 4, {{2, sizeof(struct tty_struct), W}}},
+#endif
+    {IOCTL(FIONCLEX), OK, RLONG, 4, /* void */},
+    {IOCTL(FIOCLEX), OK, RLONG, 4, /* void */},
+    {IOCTL(FIOASYNC), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(TIOCSERCONFIG), OK, RLONG, 4, /* void */},
+    {IOCTL(TIOCSERGWILD), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(TIOCSERSWILD), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(TIOCGLCKTRMIOS), OK, RLONG, 4, {{2, sizeof(struct termios), W}}},
+    {IOCTL(TIOCSLCKTRMIOS), OK, RLONG, 4, {{2, sizeof(struct termios), R}}},
+#if 0 /* FIXME: struct not in my headers */
+    {IOCTL(TIOCSERGSTRUCT), OK, RLONG, 4, {{2, sizeof(struct async_struct), W}}},
+#endif
+    {IOCTL(TIOCSERGETLSR), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(TIOCSERGETMULTI), OK, RLONG, 4, {{2, sizeof(struct serial_multiport_struct), W}}},
+    {IOCTL(TIOCSERSETMULTI), OK, RLONG, 4, {{2, sizeof(struct serial_multiport_struct), R}}},
+
+    // <include/linux/ax25.h>
+    {IOCTL(SIOCAX25GETUID), OK, RLONG, 4, {{2, sizeof(struct sockaddr_ax25), R}}},
+    {IOCTL(SIOCAX25ADDUID), OK, RLONG, 4, {{2, sizeof(struct sockaddr_ax25), R}}},
+    {IOCTL(SIOCAX25DELUID), OK, RLONG, 4, {{2, sizeof(struct sockaddr_ax25), R}}},
+    {IOCTL(SIOCAX25NOUID), OK, RLONG, 4, {{2, sizeof(int), R}}},
+#if 0 /* FIXME: define not in my headers */
+    {IOCTL(SIOCAX25DIGCTL), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(SIOCAX25GETPARMS), OK, RLONG, 4, {{2, sizeof(struct ax25_parms_struct), R|W}}},
+    {IOCTL(SIOCAX25SETPARMS), OK, RLONG, 4, {{2, sizeof(struct ax25_parms_struct), R}}},
+#endif
+
+    // <include/linux/cdk.h>
+    {IOCTL(STL_BINTR), OK, RLONG, 4, /* void */},
+    {IOCTL(STL_BSTART), OK, RLONG, 4, /* void */},
+    {IOCTL(STL_BSTOP), OK, RLONG, 4, /* void */},
+    {IOCTL(STL_BRESET), OK, RLONG, 4, /* void */},
+
+    // <include/linux/cdrom.h>
+    {IOCTL(CDROMPAUSE), OK, RLONG, 4, /* void */},
+    {IOCTL(CDROMRESUME), OK, RLONG, 4, /* void */},
+    {IOCTL(CDROMPLAYMSF), OK, RLONG, 4, {{2, sizeof(struct cdrom_msf), R}}},
+    {IOCTL(CDROMPLAYTRKIND), OK, RLONG, 4, {{2, sizeof(struct cdrom_ti), R}}},
+    {IOCTL(CDROMREADTOCHDR), OK, RLONG, 4, {{2, sizeof(struct cdrom_tochdr), W}}},
+    {IOCTL(CDROMREADTOCENTRY), OK, RLONG, 4, {{2, sizeof(struct cdrom_tocentry), R|W}}},
+    {IOCTL(CDROMSTOP), OK, RLONG, 4, /* void */},
+    {IOCTL(CDROMSTART), OK, RLONG, 4, /* void */},
+    {IOCTL(CDROMEJECT), OK, RLONG, 4, /* void */},
+    {IOCTL(CDROMVOLCTRL), OK, RLONG, 4, {{2, sizeof(struct cdrom_volctrl), R}}},
+    {IOCTL(CDROMSUBCHNL), OK, RLONG, 4, {{2, sizeof(struct cdrom_subchnl), R|W}}},
+    {IOCTL(CDROMREADMODE2), OK, RLONG, 4, {{2, sizeof(struct cdrom_msf), R}}}, /* FIXME: more */
+    {IOCTL(CDROMREADMODE1), OK, RLONG, 4, {{2, sizeof(struct cdrom_msf), R}}}, /* FIXME: more */
+    {IOCTL(CDROMREADAUDIO), OK, RLONG, 4, {{2, sizeof(struct cdrom_read_audio), R}}}, /* FIXME: more */
+    {IOCTL(CDROMEJECT_SW), OK, RLONG, 4, /* int */},
+    {IOCTL(CDROMMULTISESSION), OK, RLONG, 4, {{2, sizeof(struct cdrom_multisession), R|W}}},
+    {IOCTL(CDROM_GET_UPC), OK, RLONG, 4, {{2, sizeof(char[8]), W}}},
+    {IOCTL(CDROMRESET), OK, RLONG, 4, /* void */},
+    {IOCTL(CDROMVOLREAD), OK, RLONG, 4, {{2, sizeof(struct cdrom_volctrl), W}}},
+    {IOCTL(CDROMREADRAW), OK, RLONG, 4, {{2, sizeof(struct cdrom_msf), R}}}, /* FIXME: more */
+    {IOCTL(CDROMREADCOOKED), OK, RLONG, 4, {{2, sizeof(struct cdrom_msf), R}}}, /* FIXME: more */
+    {IOCTL(CDROMSEEK), OK, RLONG, 4, {{2, sizeof(struct cdrom_msf), R}}},
+
+    // <include/linux/cm206.h>
+#if 0 /* FIXME: define not in my headers */
+    {IOCTL(CM206CTL_GET_STAT), OK, RLONG, 4, /* int */},
+    {IOCTL(CM206CTL_GET_LAST_STAT), OK, RLONG, 4, /* int */},
+#endif
+
+    // <include/linux/cyclades.h>
+    {IOCTL(CYGETMON), OK, RLONG, 4, {{2, sizeof(struct cyclades_monitor), W}}},
+    {IOCTL(CYGETTHRESH), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(CYSETTHRESH), OK, RLONG, 4, /* int */},
+    {IOCTL(CYGETDEFTHRESH), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(CYSETDEFTHRESH), OK, RLONG, 4, /* int */},
+    {IOCTL(CYGETTIMEOUT), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(CYSETTIMEOUT), OK, RLONG, 4, /* int */},
+    {IOCTL(CYGETDEFTIMEOUT), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(CYSETDEFTIMEOUT), OK, RLONG, 4, /* int */},
+
+    // <include/linux/ext2_fs.h>
+    {IOCTL(EXT2_IOC_GETFLAGS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(EXT2_IOC_SETFLAGS), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(EXT2_IOC_GETVERSION), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(EXT2_IOC_SETVERSION), OK, RLONG, 4, {{2, sizeof(int), R}}},
+
+    // <include/linux/fd.h>
+    {IOCTL(FDCLRPRM), OK, RLONG, 4, /* void */},
+    {IOCTL(FDSETPRM), OK, RLONG, 4, {{2, sizeof(struct floppy_struct), R}}},
+    {IOCTL(FDDEFPRM), OK, RLONG, 4, {{2, sizeof(struct floppy_struct), R}}},
+    {IOCTL(FDGETPRM), OK, RLONG, 4, {{2, sizeof(struct floppy_struct), W}}},
+    {IOCTL(FDMSGON), OK, RLONG, 4, /* void */},
+    {IOCTL(FDMSGOFF), OK, RLONG, 4, /* void */},
+    {IOCTL(FDFMTBEG), OK, RLONG, 4, /* void */},
+    {IOCTL(FDFMTTRK), OK, RLONG, 4, {{2, sizeof(struct format_descr), R}}},
+    {IOCTL(FDFMTEND), OK, RLONG, 4, /* void */},
+    {IOCTL(FDSETEMSGTRESH), OK, RLONG, 4, /* int */},
+    {IOCTL(FDFLUSH), OK, RLONG, 4, /* void */},
+    {IOCTL(FDSETMAXERRS), OK, RLONG, 4, {{2, sizeof(struct floppy_max_errors), R}}},
+    {IOCTL(FDGETMAXERRS), OK, RLONG, 4, {{2, sizeof(struct floppy_max_errors), W}}},
+    {IOCTL(FDGETDRVTYP), OK, RLONG, 4, {{2, sizeof(char[16]), W}}},
+    {IOCTL(FDSETDRVPRM), OK, RLONG, 4, {{2, sizeof(struct floppy_drive_params), R}}},
+    {IOCTL(FDGETDRVPRM), OK, RLONG, 4, {{2, sizeof(struct floppy_drive_params), W}}},
+    {IOCTL(FDGETDRVSTAT), OK, RLONG, 4, {{2, sizeof(struct floppy_drive_struct), W}}},
+    {IOCTL(FDPOLLDRVSTAT), OK, RLONG, 4, {{2, sizeof(struct floppy_drive_struct), W}}},
+    {IOCTL(FDRESET), OK, RLONG, 4, /* int */},
+    {IOCTL(FDGETFDCSTAT), OK, RLONG, 4, {{2, sizeof(struct floppy_fdc_state), W}}},
+    {IOCTL(FDWERRORCLR), OK, RLONG, 4, /* void */},
+    {IOCTL(FDWERRORGET), OK, RLONG, 4, {{2, sizeof(struct floppy_write_errors), W}}},
+    {IOCTL(FDRAWCMD), OK, RLONG, 4, {{2, sizeof(struct floppy_raw_cmd), R|W}}}, /* FIXME: more */
+    {IOCTL(FDTWADDLE), OK, RLONG, 4, /* void */},
+
+    // <include/linux/fs.h>
+    {IOCTL(BLKROSET), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(BLKROGET), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(BLKRRPART), OK, RLONG, 4, /* void */},
+    {IOCTL(BLKGETSIZE), OK, RLONG, 4, {{2, sizeof(unsigned long), W}}},
+    {IOCTL(BLKFLSBUF), OK, RLONG, 4, /* void */},
+    {IOCTL(BLKRASET), OK, RLONG, 4, /* int */},
+    {IOCTL(BLKRAGET), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(FIBMAP), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(FIGETBSZ), OK, RLONG, 4, {{2, sizeof(int), W}}},
+
+    // <include/linux/hdreg.h>
+    {IOCTL(HDIO_GETGEO), OK, RLONG, 4, {{2, sizeof(struct hd_geometry), W}}},
+    {IOCTL(HDIO_GET_UNMASKINTR), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(HDIO_GET_MULTCOUNT), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(HDIO_GET_IDENTITY), OK, RLONG, 4, {{2, sizeof(struct hd_driveid), W}}},
+    {IOCTL(HDIO_GET_KEEPSETTINGS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+#if 0 /* FIXME: define not in my headers */
+    {IOCTL(HDIO_GET_CHIPSET), OK, RLONG, 4, {{2, sizeof(int), W}}},
+#endif
+    {IOCTL(HDIO_GET_NOWERR), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(HDIO_GET_DMA), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(HDIO_DRIVE_CMD), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(HDIO_SET_MULTCOUNT), OK, RLONG, 4, /* int */},
+    {IOCTL(HDIO_SET_UNMASKINTR), OK, RLONG, 4, /* int */},
+    {IOCTL(HDIO_SET_KEEPSETTINGS), OK, RLONG, 4, /* int */},
+#if 0 /* FIXME: define not in my headers */
+    {IOCTL(HDIO_SET_CHIPSET), OK, RLONG, 4, /* int */},
+#endif
+    {IOCTL(HDIO_SET_NOWERR), OK, RLONG, 4, /* int */},
+    {IOCTL(HDIO_SET_DMA), OK, RLONG, 4, /* int */},
+
+#if 0 /* FIXME: having problems including header */
+    // <include/linux/if_eql.h>
+    {IOCTL(EQL_ENSLAVE), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}}, /* FIXME: more */
+    {IOCTL(EQL_EMANCIPATE), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}}, /* FIXME: more */
+    {IOCTL(EQL_GETSLAVECFG), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}}, /* FIXME: more */
+    {IOCTL(EQL_SETSLAVECFG), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}}, /* FIXME: more */
+    {IOCTL(EQL_GETMASTRCFG), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}}, /* FIXME: more */
+    {IOCTL(EQL_SETMASTRCFG), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}}, /* FIXME: more */
+#endif
+
+    // <include/linux/if_plip.h>
+    {IOCTL(SIOCDEVPLIP), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+
+#if 0 /* FIXME: having problems including header */
+    // <include/linux/if_ppp.h>
+    {IOCTL(PPPIOCGFLAGS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(PPPIOCSFLAGS), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(PPPIOCGASYNCMAP), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(PPPIOCSASYNCMAP), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(PPPIOCGUNIT), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(PPPIOCSINPSIG), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(PPPIOCSDEBUG), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(PPPIOCGDEBUG), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(PPPIOCGSTAT), OK, RLONG, 4, {{2, sizeof(struct ppp_stats), W}}},
+    {IOCTL(PPPIOCGTIME), OK, RLONG, 4, {{2, sizeof(struct ppp_ddinfo), W}}},
+    {IOCTL(PPPIOCGXASYNCMAP), OK, RLONG, 4, {{2, sizeof(struct { int [8]; }), W}}},
+    {IOCTL(PPPIOCSXASYNCMAP), OK, RLONG, 4, {{2, sizeof(struct { int [8]; }), R}}},
+    {IOCTL(PPPIOCSMRU), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(PPPIOCRASYNCMAP), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(PPPIOCSMAXCID), OK, RLONG, 4, {{2, sizeof(int), R}}},
+#endif
+
+#if 0 /* FIXME: identical to ax25 1st 3 */
+    // <include/linux/ipx.h>
+    {IOCTL(SIOCAIPXITFCRT), OK, RLONG, 4, {{2, sizeof(char), R}}},
+    {IOCTL(SIOCAIPXPRISLT), OK, RLONG, 4, {{2, sizeof(char), R}}},
+    {IOCTL(SIOCIPXCFGDATA), OK, RLONG, 4, {{2, sizeof(struct ipx_config_data), W}}},
+#endif
+
+    // <include/linux/kd.h>
+    {IOCTL(GIO_FONT), OK, RLONG, 4, {{2, sizeof(char[8192]), W}}},
+    {IOCTL(PIO_FONT), OK, RLONG, 4, {{2, sizeof(char[8192]), R}}},
+#if 0 /* FIXME: struct not in my defines */
+    {IOCTL(GIO_FONTX), OK, RLONG, 4, {{2, sizeof(struct console_font_desc), R|W}}}, /* FIXME: more */
+    {IOCTL(PIO_FONTX), OK, RLONG, 4, {{2, sizeof(struct console_font_desc), R}}}, /* FIXME: more */
+#endif
+    {IOCTL(GIO_CMAP), OK, RLONG, 4, {{2, sizeof(char[48]), W}}},
+    {IOCTL(PIO_CMAP), OK, RLONG, 4, /* const struct { char [48]; } */},
+    {IOCTL(KIOCSOUND), OK, RLONG, 4, /* int */},
+    {IOCTL(KDMKTONE), OK, RLONG, 4, /* int */},
+    {IOCTL(KDGETLED), OK, RLONG, 4, {{2, sizeof(char), W}}},
+    {IOCTL(KDSETLED), OK, RLONG, 4, /* int */},
+    {IOCTL(KDGKBTYPE), OK, RLONG, 4, {{2, sizeof(char), W}}},
+    {IOCTL(KDADDIO), OK, RLONG, 4, /* int */}, /* FIXME: more */
+    {IOCTL(KDDELIO), OK, RLONG, 4, /* int */}, /* FIXME: more */
+    {IOCTL(KDENABIO), OK, RLONG, 4, /* void */}, /* FIXME: more */
+    {IOCTL(KDDISABIO), OK, RLONG, 4, /* void */}, /* FIXME: more */
+    {IOCTL(KDSETMODE), OK, RLONG, 4, /* int */},
+    {IOCTL(KDGETMODE), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(KDMAPDISP), OK, RLONG, 4, /* void */}, /* FIXME: more */
+    {IOCTL(KDUNMAPDISP), OK, RLONG, 4, /* void */}, /* FIXME: more */
+    {IOCTL(GIO_SCRNMAP), OK, RLONG, 4, {{2, sizeof(char[E_TABSZ]), W}}},
+    {IOCTL(PIO_SCRNMAP), OK, RLONG, 4, {{2, sizeof(char[E_TABSZ]), R}}},
+    {IOCTL(GIO_UNISCRNMAP), OK, RLONG, 4, {{2, sizeof(short[E_TABSZ]), W}}},
+    {IOCTL(PIO_UNISCRNMAP), OK, RLONG, 4, {{2, sizeof(short[E_TABSZ]), R}}},
+    {IOCTL(GIO_UNIMAP), OK, RLONG, 4, {{2, sizeof(struct unimapdesc), R|W}}}, /* FIXME: more */
+    {IOCTL(PIO_UNIMAP), OK, RLONG, 4, {{2, sizeof(struct unimapdesc), R}}}, /* FIXME: more */
+    {IOCTL(PIO_UNIMAPCLR), OK, RLONG, 4, {{2, sizeof(struct unimapinit), R}}},
+    {IOCTL(KDGKBMODE), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(KDSKBMODE), OK, RLONG, 4, /* int */},
+    {IOCTL(KDGKBMETA), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(KDSKBMETA), OK, RLONG, 4, /* int */},
+    {IOCTL(KDGKBLED), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(KDSKBLED), OK, RLONG, 4, /* int */},
+    {IOCTL(KDGKBENT), OK, RLONG, 4, {{2, sizeof(struct kbentry), R|W}}},
+    {IOCTL(KDSKBENT), OK, RLONG, 4, {{2, sizeof(struct kbentry), R}}},
+    {IOCTL(KDGKBSENT), OK, RLONG, 4, {{2, sizeof(struct kbsentry), R|W}}},
+    {IOCTL(KDSKBSENT), OK, RLONG, 4, {{2, sizeof(struct kbsentry), R}}},
+    {IOCTL(KDGKBDIACR), OK, RLONG, 4, {{2, sizeof(struct kbdiacrs), W}}},
+    {IOCTL(KDSKBDIACR), OK, RLONG, 4, {{2, sizeof(struct kbdiacrs), R}}},
+    {IOCTL(KDGETKEYCODE), OK, RLONG, 4, {{2, sizeof(struct kbkeycode), R|W}}},
+    {IOCTL(KDSETKEYCODE), OK, RLONG, 4, {{2, sizeof(struct kbkeycode), R}}},
+    {IOCTL(KDSIGACCEPT), OK, RLONG, 4, /* int */},
+
+    // <include/linux/lp.h>
+    {IOCTL(LPCHAR), OK, RLONG, 4, /* int */},
+    {IOCTL(LPTIME), OK, RLONG, 4, /* int */},
+    {IOCTL(LPABORT), OK, RLONG, 4, /* int */},
+    {IOCTL(LPSETIRQ), OK, RLONG, 4, /* int */},
+    {IOCTL(LPGETIRQ), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(LPWAIT), OK, RLONG, 4, /* int */},
+    {IOCTL(LPCAREFUL), OK, RLONG, 4, /* int */},
+    {IOCTL(LPABORTOPEN), OK, RLONG, 4, /* int */},
+    {IOCTL(LPGETSTATUS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(LPRESET), OK, RLONG, 4, /* void */},
+#if 0 /* FIXME: define not in my headers */
+    {IOCTL(LPGETSTATS), OK, RLONG, 4, {{2, sizeof(struct lp_stats), W}}},
+#endif
+
+#if 0 /* FIXME: identical to ax25 1st 2 */
+    // <include/linux/mroute.h>
+    {IOCTL(SIOCGETVIFCNT), OK, RLONG, 4, {{2, sizeof(struct sioc_vif_req), R|W}}},
+    {IOCTL(SIOCGETSGCNT), OK, RLONG, 4, {{2, sizeof(struct sioc_sg_req), R|W}}},
+#endif
+
+    // <include/linux/mtio.h>
+    {IOCTL(MTIOCTOP), OK, RLONG, 4, {{2, sizeof(struct mtop), R}}},
+    {IOCTL(MTIOCGET), OK, RLONG, 4, {{2, sizeof(struct mtget), W}}},
+    {IOCTL(MTIOCPOS), OK, RLONG, 4, {{2, sizeof(struct mtpos), W}}},
+    {IOCTL(MTIOCGETCONFIG), OK, RLONG, 4, {{2, sizeof(struct mtconfiginfo), W}}},
+    {IOCTL(MTIOCSETCONFIG), OK, RLONG, 4, {{2, sizeof(struct mtconfiginfo), R}}},
+
+#if 0 /* FIXME: define not in my headers */
+    // <include/linux/netrom.h>
+    {IOCTL(SIOCNRGETPARMS), OK, RLONG, 4, {{2, sizeof(struct nr_parms_struct), R|W}}},
+    {IOCTL(SIOCNRSETPARMS), OK, RLONG, 4, {{2, sizeof(struct nr_parms_struct), R}}},
+    {IOCTL(SIOCNRDECOBS), OK, RLONG, 4, /* void */},
+    {IOCTL(SIOCNRRTCTL), OK, RLONG, 4, {{2, sizeof(int), R}}},
+#endif
+
+#if 0 /* FIXME: define not in my headers */
+    // <include/linux/sbpcd.h>
+    {IOCTL(DDIOCSDBG), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(CDROMAUDIOBUFSIZ), OK, RLONG, 4, /* int */},
+#endif
+
+#if 0 /* FIXME: define not in my headers */
+    // <include/linux/scc.h>
+    {IOCTL(TIOCSCCINI), OK, RLONG, 4, /* void */},
+    {IOCTL(TIOCCHANINI), OK, RLONG, 4, {{2, sizeof(struct scc_modem), R}}},
+    {IOCTL(TIOCGKISS), OK, RLONG, 4, {{2, sizeof(struct ioctl_command), R|W}}},
+    {IOCTL(TIOCSKISS), OK, RLONG, 4, {{2, sizeof(struct ioctl_command), R}}},
+    {IOCTL(TIOCSCCSTAT), OK, RLONG, 4, {{2, sizeof(struct scc_stat), W}}},
+#endif
+
+#if 0 /* FIXME: define not in my headers */
+    // <include/linux/scsi.h>
+    {IOCTL(SCSI_IOCTL_GET_IDLUN), OK, RLONG, 4, {{2, sizeof(struct { int [2]; }), W}}},
+    {IOCTL(SCSI_IOCTL_TAGGED_ENABLE), OK, RLONG, 4, /* void */},
+    {IOCTL(SCSI_IOCTL_TAGGED_DISABLE), OK, RLONG, 4, /* void */},
+    {IOCTL(SCSI_IOCTL_PROBE_HOST), OK, RLONG, 4, {{2, sizeof(int), R}}}, /* FIXME: more */
+#endif
+
+    // <include/linux/smb_fs.h>
+    {IOCTL(SMB_IOC_GETMOUNTUID), OK, RLONG, 4, {{2, sizeof(uid_t), W}}},
+
+    // <include/linux/sockios.h>
+    {IOCTL(SIOCADDRT), OK, RLONG, 4, {{2, sizeof(struct rtentry), R}}}, /* FIXME: more */
+    {IOCTL(SIOCDELRT), OK, RLONG, 4, {{2, sizeof(struct rtentry), R}}}, /* FIXME: more */
+    {IOCTL(SIOCGIFNAME), OK, RLONG, 4, /* char [] */},
+    {IOCTL(SIOCSIFLINK), OK, RLONG, 4, /* void */},
+    {IOCTL(SIOCGIFFLAGS), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+    {IOCTL(SIOCSIFFLAGS), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+    {IOCTL(SIOCGIFADDR), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+    {IOCTL(SIOCSIFADDR), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+    {IOCTL(SIOCGIFDSTADDR), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+    {IOCTL(SIOCSIFDSTADDR), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+    {IOCTL(SIOCGIFBRDADDR), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+    {IOCTL(SIOCSIFBRDADDR), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+    {IOCTL(SIOCGIFNETMASK), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+    {IOCTL(SIOCSIFNETMASK), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+    {IOCTL(SIOCGIFMETRIC), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+    {IOCTL(SIOCSIFMETRIC), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+    {IOCTL(SIOCGIFMEM), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+    {IOCTL(SIOCSIFMEM), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+    {IOCTL(SIOCGIFMTU), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+    {IOCTL(SIOCSIFMTU), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+#if 0 /* FIXME: define not in my headers */
+    {IOCTL(OLD_SIOCGIFHWADDR), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+#endif
+    {IOCTL(SIOCSIFHWADDR), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}}, /* FIXME: more */
+    {IOCTL(SIOCGIFENCAP), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SIOCSIFENCAP), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(SIOCGIFHWADDR), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+    {IOCTL(SIOCGIFSLAVE), OK, RLONG, 4, /* void */},
+    {IOCTL(SIOCSIFSLAVE), OK, RLONG, 4, /* void */},
+    {IOCTL(SIOCADDMULTI), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+    {IOCTL(SIOCDELMULTI), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+#if 0 /* FIXME: define not in my headers */
+    {IOCTL(SIOCADDRTOLD), OK, RLONG, 4, /* void */},
+    {IOCTL(SIOCDELRTOLD), OK, RLONG, 4, /* void */},
+#endif
+    {IOCTL(SIOCDARP), OK, RLONG, 4, {{2, sizeof(struct arpreq), R}}},
+    {IOCTL(SIOCGARP), OK, RLONG, 4, {{2, sizeof(struct arpreq), R|W}}},
+    {IOCTL(SIOCSARP), OK, RLONG, 4, {{2, sizeof(struct arpreq), R}}},
+    {IOCTL(SIOCDRARP), OK, RLONG, 4, {{2, sizeof(struct arpreq), R}}},
+    {IOCTL(SIOCGRARP), OK, RLONG, 4, {{2, sizeof(struct arpreq), R|W}}},
+    {IOCTL(SIOCSRARP), OK, RLONG, 4, {{2, sizeof(struct arpreq), R}}},
+    {IOCTL(SIOCGIFMAP), OK, RLONG, 4, {{2, sizeof(struct ifreq), R|W}}},
+    {IOCTL(SIOCSIFMAP), OK, RLONG, 4, {{2, sizeof(struct ifreq), R}}},
+
+    // <include/linux/soundcard.h>
+    {IOCTL(SNDCTL_SEQ_RESET), OK, RLONG, 4, /* void */},
+    {IOCTL(SNDCTL_SEQ_SYNC), OK, RLONG, 4, /* void */},
+    {IOCTL(SNDCTL_SYNTH_INFO), OK, RLONG, 4, {{2, sizeof(struct synth_info), R|W}}},
+    {IOCTL(SNDCTL_SEQ_CTRLRATE), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_SEQ_GETOUTCOUNT), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SNDCTL_SEQ_GETINCOUNT), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SNDCTL_SEQ_PERCMODE), OK, RLONG, 4, /* void */},
+    {IOCTL(SNDCTL_FM_LOAD_INSTR), OK, RLONG, 4, {{2, sizeof(struct sbi_instrument), R}}},
+    {IOCTL(SNDCTL_SEQ_TESTMIDI), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(SNDCTL_SEQ_RESETSAMPLES), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(SNDCTL_SEQ_NRSYNTHS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SNDCTL_SEQ_NRMIDIS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SNDCTL_MIDI_INFO), OK, RLONG, 4, {{2, sizeof(struct midi_info), R|W}}},
+    {IOCTL(SNDCTL_SEQ_THRESHOLD), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(SNDCTL_SYNTH_MEMAVL), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_FM_4OP_ENABLE), OK, RLONG, 4, {{2, sizeof(int), R}}},
+#if 0 /* FIXME: define not in my headers */
+    {IOCTL(SNDCTL_PMGR_ACCESS), OK, RLONG, 4, {{2, sizeof(struct patmgr_info), R|W}}},
+#endif
+    {IOCTL(SNDCTL_SEQ_PANIC), OK, RLONG, 4, /* void */},
+    {IOCTL(SNDCTL_SEQ_OUTOFBAND), OK, RLONG, 4, {{2, sizeof(struct seq_event_rec), R}}},
+    {IOCTL(SNDCTL_TMR_TIMEBASE), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+#if 0 /* FIXME: identical to TCSETS and subsequent 2 */
+    {IOCTL(SNDCTL_TMR_START), OK, RLONG, 4, /* void */},
+    {IOCTL(SNDCTL_TMR_STOP), OK, RLONG, 4, /* void */},
+    {IOCTL(SNDCTL_TMR_CONTINUE), OK, RLONG, 4, /* void */},
+#endif
+    {IOCTL(SNDCTL_TMR_TEMPO), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_TMR_SOURCE), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_TMR_METRONOME), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(SNDCTL_TMR_SELECT), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+#if 0 /* FIXME: define not in my headers */
+    {IOCTL(SNDCTL_PMGR_IFACE), OK, RLONG, 4, {{2, sizeof(struct patmgr_info), R|W}}},
+#endif
+    {IOCTL(SNDCTL_MIDI_PRETIME), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_MIDI_MPUMODE), OK, RLONG, 4, {{2, sizeof(int), R}}},
+#if 0 /* FIXME: struct not in my headers */
+    {IOCTL(SNDCTL_MIDI_MPUCMD), OK, RLONG, 4, {{2, sizeof(struct mpu_command_rec), R|W}}},
+#endif
+    {IOCTL(SNDCTL_DSP_RESET), OK, RLONG, 4, /* void */},
+    {IOCTL(SNDCTL_DSP_SYNC), OK, RLONG, 4, /* void */},
+    {IOCTL(SNDCTL_DSP_SPEED), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_DSP_STEREO), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_DSP_GETBLKSIZE), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_PCM_WRITE_CHANNELS), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_PCM_WRITE_FILTER), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_DSP_POST), OK, RLONG, 4, /* void */},
+    {IOCTL(SNDCTL_DSP_SUBDIVIDE), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_DSP_SETFRAGMENT), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_DSP_GETFMTS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SNDCTL_DSP_SETFMT), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SNDCTL_DSP_GETOSPACE), OK, RLONG, 4, {{2, sizeof(struct audio_buf_info), W}}},
+    {IOCTL(SNDCTL_DSP_GETISPACE), OK, RLONG, 4, {{2, sizeof(struct audio_buf_info), W}}},
+    {IOCTL(SNDCTL_DSP_NONBLOCK), OK, RLONG, 4, /* void */},
+    {IOCTL(SOUND_PCM_READ_RATE), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_PCM_READ_CHANNELS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_PCM_READ_BITS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_PCM_READ_FILTER), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SNDCTL_COPR_RESET), OK, RLONG, 4, /* void */},
+    {IOCTL(SNDCTL_COPR_LOAD), OK, RLONG, 4, {{2, sizeof(struct copr_buffer), R}}},
+    {IOCTL(SNDCTL_COPR_RDATA), OK, RLONG, 4, {{2, sizeof(struct copr_debug_buf), R|W}}},
+    {IOCTL(SNDCTL_COPR_RCODE), OK, RLONG, 4, {{2, sizeof(struct copr_debug_buf), R|W}}},
+    {IOCTL(SNDCTL_COPR_WDATA), OK, RLONG, 4, {{2, sizeof(struct copr_debug_buf), R}}},
+    {IOCTL(SNDCTL_COPR_WCODE), OK, RLONG, 4, {{2, sizeof(struct copr_debug_buf), R}}},
+    {IOCTL(SNDCTL_COPR_RUN), OK, RLONG, 4, {{2, sizeof(struct copr_debug_buf), R|W}}},
+    {IOCTL(SNDCTL_COPR_HALT), OK, RLONG, 4, {{2, sizeof(struct copr_debug_buf), R|W}}},
+    {IOCTL(SNDCTL_COPR_SENDMSG), OK, RLONG, 4, {{2, sizeof(struct copr_msg), R}}},
+    {IOCTL(SNDCTL_COPR_RCVMSG), OK, RLONG, 4, {{2, sizeof(struct copr_msg), W}}},
+    {IOCTL(SOUND_MIXER_READ_VOLUME), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_BASS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_TREBLE), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_SYNTH), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_PCM), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_SPEAKER), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_LINE), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_MIC), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_CD), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_IMIX), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_ALTPCM), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_RECLEV), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_IGAIN), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_OGAIN), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_LINE1), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_LINE2), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_LINE3), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_MUTE), OK, RLONG, 4, {{2, sizeof(int), W}}},
+#if 0 /* FIXME: identical to SOUND_MIXER_READ_MUTE */
+    {IOCTL(SOUND_MIXER_READ_ENHANCE), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_LOUD), OK, RLONG, 4, {{2, sizeof(int), W}}},
+#endif
+    {IOCTL(SOUND_MIXER_READ_RECSRC), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_DEVMASK), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_RECMASK), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_STEREODEVS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_READ_CAPS), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(SOUND_MIXER_WRITE_VOLUME), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_BASS), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_TREBLE), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_SYNTH), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_PCM), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_SPEAKER), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_LINE), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_MIC), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_CD), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_IMIX), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_ALTPCM), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_RECLEV), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_IGAIN), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_OGAIN), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_LINE1), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_LINE2), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_LINE3), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_MUTE), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+#if 0 /* FIXME: identical to SOUND_MIXER_WRITE_MUTE */
+    {IOCTL(SOUND_MIXER_WRITE_ENHANCE), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+    {IOCTL(SOUND_MIXER_WRITE_LOUD), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+#endif
+    {IOCTL(SOUND_MIXER_WRITE_RECSRC), OK, RLONG, 4, {{2, sizeof(int), R|W}}},
+
+#if 0 /* FIXME: define not in my headers */
+    // <include/linux/umsdos_fs.h>
+    {IOCTL(UMSDOS_READDIR_DOS), OK, RLONG, 4, {{2, sizeof(struct umsdos_ioctl), R|W}}},
+    {IOCTL(UMSDOS_UNLINK_DOS), OK, RLONG, 4, {{2, sizeof(struct umsdos_ioctl), R}}},
+    {IOCTL(UMSDOS_RMDIR_DOS), OK, RLONG, 4, {{2, sizeof(struct umsdos_ioctl), R}}},
+    {IOCTL(UMSDOS_STAT_DOS), OK, RLONG, 4, {{2, sizeof(struct umsdos_ioctl), R|W}}},
+    {IOCTL(UMSDOS_CREAT_EMD), OK, RLONG, 4, {{2, sizeof(struct umsdos_ioctl), R}}},
+    {IOCTL(UMSDOS_UNLINK_EMD), OK, RLONG, 4, {{2, sizeof(struct umsdos_ioctl), R}}},
+    {IOCTL(UMSDOS_READDIR_EMD), OK, RLONG, 4, {{2, sizeof(struct umsdos_ioctl), R|W}}},
+    {IOCTL(UMSDOS_GETVERSION), OK, RLONG, 4, {{2, sizeof(struct umsdos_ioctl), W}}},
+    {IOCTL(UMSDOS_INIT_EMD), OK, RLONG, 4, /* void */},
+    {IOCTL(UMSDOS_DOS_SETUP), OK, RLONG, 4, {{2, sizeof(struct umsdos_ioctl), R}}},
+    {IOCTL(UMSDOS_RENAME_DOS), OK, RLONG, 4, {{2, sizeof(struct umsdos_ioctl), R}}},
+#endif
+
+    // <include/linux/vt.h>
+    {IOCTL(VT_OPENQRY), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(VT_GETMODE), OK, RLONG, 4, {{2, sizeof(struct vt_mode), W}}},
+    {IOCTL(VT_SETMODE), OK, RLONG, 4, {{2, sizeof(struct vt_mode), R}}},
+    {IOCTL(VT_GETSTATE), OK, RLONG, 4, {{2, sizeof(struct vt_stat), W}}},
+    {IOCTL(VT_SENDSIG), OK, RLONG, 4, /* void */},
+    {IOCTL(VT_RELDISP), OK, RLONG, 4, /* int */},
+    {IOCTL(VT_ACTIVATE), OK, RLONG, 4, /* int */},
+    {IOCTL(VT_WAITACTIVE), OK, RLONG, 4, /* int */},
+    {IOCTL(VT_DISALLOCATE), OK, RLONG, 4, /* int */},
+    {IOCTL(VT_RESIZE), OK, RLONG, 4, {{2, sizeof(struct vt_sizes), R}}},
+    {IOCTL(VT_RESIZEX), OK, RLONG, 4, {{2, sizeof(struct vt_consize), R}}},
+
+    /* include <linux/ipmi.h> PR 531644 */
+    {IOCTL(IPMICTL_REGISTER_FOR_CMD), OK, RLONG, 4, {{2, sizeof(struct ipmi_cmdspec), R}}},
+    {IOCTL(IPMICTL_UNREGISTER_FOR_CMD), OK, RLONG, 4, {{2, sizeof(struct ipmi_cmdspec), R}}},
+    {IOCTL(IPMICTL_REGISTER_FOR_CMD_CHANS), OK, RLONG, 4, {{2, sizeof(struct ipmi_cmdspec_chans), R}}},
+    {IOCTL(IPMICTL_UNREGISTER_FOR_CMD_CHANS), OK, RLONG, 4, {{2, sizeof(struct ipmi_cmdspec_chans), R}}},
+    {IOCTL(IPMICTL_SET_GETS_EVENTS_CMD), OK, RLONG, 4, {{2, sizeof(int), R}}},
+    {IOCTL(IPMICTL_SET_MY_CHANNEL_ADDRESS_CMD), OK, RLONG, 4, {{2, sizeof(struct ipmi_channel_lun_address_set), R}}},
+    {IOCTL(IPMICTL_GET_MY_CHANNEL_ADDRESS_CMD), OK, RLONG, 4, {{2, sizeof(struct ipmi_channel_lun_address_set), W}}},
+    {IOCTL(IPMICTL_SET_MY_CHANNEL_LUN_CMD), OK, RLONG, 4, {{2, sizeof(struct ipmi_channel_lun_address_set), R}}},
+    {IOCTL(IPMICTL_GET_MY_CHANNEL_LUN_CMD), OK, RLONG, 4, {{2, sizeof(struct ipmi_channel_lun_address_set), W}}},
+    {IOCTL(IPMICTL_SET_MY_ADDRESS_CMD), OK, RLONG, 4, {{2, sizeof(uint), R}}},
+    {IOCTL(IPMICTL_GET_MY_ADDRESS_CMD), OK, RLONG, 4, {{2, sizeof(uint), W}}},
+    {IOCTL(IPMICTL_SET_MY_LUN_CMD), OK, RLONG, 4, {{2, sizeof(uint), R}}},
+    {IOCTL(IPMICTL_GET_MY_LUN_CMD), OK, RLONG, 4, {{2, sizeof(uint), W}}},
+    {IOCTL(IPMICTL_SET_TIMING_PARMS_CMD), OK, RLONG, 4, {{2, sizeof(struct ipmi_timing_parms), R}}},
+    {IOCTL(IPMICTL_GET_TIMING_PARMS_CMD), OK, RLONG, 4, {{2, sizeof(struct ipmi_timing_parms), W}}},
+    {IOCTL(IPMICTL_GET_MAINTENANCE_MODE_CMD), OK, RLONG, 4, {{2, sizeof(int), W}}},
+    {IOCTL(IPMICTL_SET_MAINTENANCE_MODE_CMD), OK, RLONG, 4, {{2, sizeof(int), R}}},
+};
+
+#define NUM_IOCTL_STATIC_ENTRIES BUFFER_SIZE_ELEMENTS(syscall_ioctl_info)
+
+#undef IOCTL
+
 #undef OK
 #undef UNKNOWN
 #undef W
@@ -1445,8 +2020,6 @@ static syscall_info_t syscall_info[] = {
 #undef CT
 #undef CSTRING
 #undef RET
-
-#define NUM_SYSCALL_STATIC_ENTRIES (sizeof(syscall_info)/sizeof(syscall_info[0]))
 
 /***************************************************************************
  * TOP-LEVEL
@@ -1468,11 +2041,7 @@ drsyscall_os_init(void *drcontext)
 
     dr_recurlock_lock(systable_lock);
     for (i = 0; i < NUM_SYSCALL_STATIC_ENTRIES; i++) {
-#ifdef X64
-        syscall_info[i].num.number = UNPACK_X64(syscall_info[i].num.number);
-#else
-        syscall_info[i].num.number = UNPACK_X86(syscall_info[i].num.number);
-#endif
+        syscall_info[i].num.number = UNPACK_NATIVE(syscall_info[i].num.number);
         if (syscall_info[i].num.number != -1) {
             IF_DEBUG(bool ok =)
                 hashtable_add(&systable, (void *) &syscall_info[i].num,
@@ -1484,6 +2053,18 @@ drsyscall_os_init(void *drcontext)
                               (void *) &syscall_info[i].num);
             ASSERT(ok || strcmp(syscall_info[i].name, "ni_syscall") == 0, "no dups");
         }
+    }
+
+    for (i = 0; i < NUM_IOCTL_STATIC_ENTRIES; i++) {
+        syscall_info_t *info = &syscall_ioctl_info[i];
+        info->num.number = UNPACK_NATIVE(info->num.number);
+        IF_DEBUG(bool ok =)
+            hashtable_add(&systable, (void *) &info->num, (void *) info);
+        ASSERT(ok, "no dups");
+        IF_DEBUG(ok =)
+            hashtable_add(&name2num_table, (void *) syscall_info[i].name,
+                          (void *) &syscall_info[i].num);
+        ASSERT(ok, "no dups");
     }
     dr_recurlock_unlock(systable_lock);
     return DRMF_SUCCESS;
@@ -1680,354 +2261,12 @@ handle_pre_ioctl(void *drcontext, cls_syscall_t *pt, sysarg_iter_info_t *ii)
         return;                                                                \
 } while (0)
 
-    /* From "man ioctl_list" 
-     * Note that we treat in-out as just read since we'll report and mark
-     * as defined if undefined.
+    /* From "man ioctl_list".  This switch handles the special cases we've hit
+     * so far, but the full table above has unhandled ioctls marked with
+     * "FIXME: more".
      */
-    /* FIXME: "Some ioctls take a pointer to a structure which contains
-     * additional pointers."  These are marked above with "FIXME: more".
-     * They are listed in the man page but I'm too lazy to add them just now.
-     */
-    /* XXX: could use SYSINFO_SECONDARY_TABLE instead */
     switch (request) {
-
-    // <include/asm-i386/socket.h>
-    case FIOSETOWN: sz = sizeof(int); break;
-    case SIOCSPGRP: sz = sizeof(int); break;
-    case FIOGETOWN: sz = sizeof(int); write = true; break;
-    case SIOCGPGRP: sz = sizeof(int); write = true; break;
-    case SIOCATMARK: sz = sizeof(int); write = true; break;
-    case SIOCGSTAMP: sz = sizeof(struct timeval); write = true; break;
-
-    // <include/asm-i386/termios.h>
-    case TCGETS: sz = sizeof(struct termios); write = true; break;
-    case TCSETS: sz = sizeof(struct termios); break;
-    case TCSETSW: sz = sizeof(struct termios ); break;
-    case TCSETSF: sz = sizeof(struct termios); break;
-    case TCGETA: sz = sizeof(struct termios); write = true; break;
-    case TCSETA: sz = sizeof(struct termios); break;
-    case TCSETAW: sz = sizeof(struct termios); break;
-    case TCSETAF: sz = sizeof(struct termios); break;
-    case TCSBRK: sz = 0; /* int */ break;
-    case TCXONC: sz = 0; /* int */ break;
-    case TCFLSH: sz = 0; /* int */ break;
-    case TIOCEXCL: sz = 0; /* void */ break;
-    case TIOCNXCL: sz = 0; /* void */ break;
-    case TIOCSCTTY: sz = 0; /* int */ break;
-    case TIOCGPGRP: sz = sizeof(pid_t); write = true; break;
-    case TIOCSPGRP: sz = sizeof(pid_t); break;
-    case TIOCOUTQ: sz = sizeof(int); write = true; break;
-    case TIOCSTI: sz = sizeof(char); break;
-    case TIOCGWINSZ: sz = sizeof(struct winsize); write = true; break;
-    case TIOCSWINSZ: sz = sizeof(struct winsize); break;
-    case TIOCMGET: sz = sizeof(int); write = true; break;
-    case TIOCMBIS: sz = sizeof(int); break;
-    case TIOCMBIC: sz = sizeof(int); break;
-    case TIOCMSET: sz = sizeof(int); break;
-    case TIOCGSOFTCAR: sz = sizeof(int); write = true; break;
-    case TIOCSSOFTCAR: sz = sizeof(int); break;
-    case TIOCINQ /*== FIONREAD*/: sz = sizeof(int); write = true; break;
-    case TIOCLINUX: sz = sizeof(char); break; /* FIXME: more */
-    case TIOCCONS: sz = 0; /* void */ break;
-    case TIOCGSERIAL: sz = sizeof(struct serial_struct); write = true; break;
-    case TIOCSSERIAL: sz = sizeof(struct serial_struct); break;
-    case TIOCPKT: sz = sizeof(int); break;
-    case FIONBIO: sz = sizeof(int); break;
-    case TIOCNOTTY: sz = 0; /* void */ break;
-    case TIOCSETD: sz = sizeof(int); break;
-    case TIOCGETD: sz = sizeof(int); write = true; break;
-    case TCSBRKP: sz = 0; /* int */ break;
-#if 0 /* FIXME: struct not in my headers */
-    case TIOCTTYGSTRUCT: sz = sizeof(struct tty_struct); write = true; break;
-#endif
-    case FIONCLEX: sz = 0; /* void */ break;
-    case FIOCLEX: sz = 0; /* void */ break;
-    case FIOASYNC: sz = sizeof(int); break;
-    case TIOCSERCONFIG: sz = 0; /* void */ break;
-    case TIOCSERGWILD: sz = sizeof(int); write = true; break;
-    case TIOCSERSWILD: sz = sizeof(int); break;
-    case TIOCGLCKTRMIOS: sz = sizeof(struct termios); write = true; break;
-    case TIOCSLCKTRMIOS: sz = sizeof(struct termios); break;
-#if 0 /* FIXME: struct not in my headers */
-    case TIOCSERGSTRUCT: sz = sizeof(struct async_struct); write = true; break;
-#endif
-    case TIOCSERGETLSR: sz = sizeof(int); write = true; break;
-    case TIOCSERGETMULTI: sz = sizeof(struct serial_multiport_struct); write = true; break;
-    case TIOCSERSETMULTI: sz = sizeof(struct serial_multiport_struct); break;
-
-    // <include/linux/ax25.h>
-    case SIOCAX25GETUID: sz = sizeof(struct sockaddr_ax25); break;
-    case SIOCAX25ADDUID: sz = sizeof(struct sockaddr_ax25); break;
-    case SIOCAX25DELUID: sz = sizeof(struct sockaddr_ax25); break;
-    case SIOCAX25NOUID: sz = sizeof(int); break;
-#if 0 /* FIXME: define not in my headers */
-    case SIOCAX25DIGCTL: sz = sizeof(int); break;
-    case SIOCAX25GETPARMS: sz = sizeof(struct ax25_parms_struct); /* in-out */ break;
-    case SIOCAX25SETPARMS: sz = sizeof(struct ax25_parms_struct); break;
-#endif
-
-    // <include/linux/cdk.h>
-    case STL_BINTR: sz = 0; /* void */ break;
-    case STL_BSTART: sz = 0; /* void */ break;
-    case STL_BSTOP: sz = 0; /* void */ break;
-    case STL_BRESET: sz = 0; /* void */ break;
-
-    // <include/linux/cdrom.h>
-    case CDROMPAUSE: sz = 0; /* void */ break;
-    case CDROMRESUME: sz = 0; /* void */ break;
-    case CDROMPLAYMSF: sz = sizeof(struct cdrom_msf); break;
-    case CDROMPLAYTRKIND: sz = sizeof(struct cdrom_ti); break;
-    case CDROMREADTOCHDR: sz = sizeof(struct cdrom_tochdr); write = true; break;
-    case CDROMREADTOCENTRY: sz = sizeof(struct cdrom_tocentry); /* in-out */ break;
-    case CDROMSTOP: sz = 0; /* void */ break;
-    case CDROMSTART: sz = 0; /* void */ break;
-    case CDROMEJECT: sz = 0; /* void */ break;
-    case CDROMVOLCTRL: sz = sizeof(struct cdrom_volctrl); break;
-    case CDROMSUBCHNL: sz = sizeof(struct cdrom_subchnl); /* in-out */ break;
-    case CDROMREADMODE2: sz = sizeof(struct cdrom_msf); break; /* FIXME: more */
-    case CDROMREADMODE1: sz = sizeof(struct cdrom_msf); break; /* FIXME: more */
-    case CDROMREADAUDIO: sz = sizeof(struct cdrom_read_audio); break; /* FIXME: more */
-    case CDROMEJECT_SW: sz = 0; /* int */ break;
-    case CDROMMULTISESSION: sz = sizeof(struct cdrom_multisession); /* in-out */ break;
-    case CDROM_GET_UPC: sz = sizeof(char[8]); write = true; break;
-    case CDROMRESET: sz = 0; /* void */ break;
-    case CDROMVOLREAD: sz = sizeof(struct cdrom_volctrl); write = true; break;
-    case CDROMREADRAW: sz = sizeof(struct cdrom_msf); break; /* FIXME: more */
-    case CDROMREADCOOKED: sz = sizeof(struct cdrom_msf); break; /* FIXME: more */
-    case CDROMSEEK: sz = sizeof(struct cdrom_msf); break;
-
-    // <include/linux/cm206.h>
-#if 0 /* FIXME: define not in my headers */
-    case CM206CTL_GET_STAT: sz = 0; /* int */ break;
-    case CM206CTL_GET_LAST_STAT: sz = 0; /* int */ break;
-#endif
-
-    // <include/linux/cyclades.h>
-    case CYGETMON: sz = sizeof(struct cyclades_monitor); write = true; break;
-    case CYGETTHRESH: sz = sizeof(int); write = true; break;
-    case CYSETTHRESH: sz = 0; /* int */ break;
-    case CYGETDEFTHRESH: sz = sizeof(int); write = true; break;
-    case CYSETDEFTHRESH: sz = 0; /* int */ break;
-    case CYGETTIMEOUT: sz = sizeof(int); write = true; break;
-    case CYSETTIMEOUT: sz = 0; /* int */ break;
-    case CYGETDEFTIMEOUT: sz = sizeof(int); write = true; break;
-    case CYSETDEFTIMEOUT: sz = 0; /* int */ break;
-
-    // <include/linux/ext2_fs.h>
-    case EXT2_IOC_GETFLAGS: sz = sizeof(int); write = true; break;
-    case EXT2_IOC_SETFLAGS: sz = sizeof(int); break;
-    case EXT2_IOC_GETVERSION: sz = sizeof(int); write = true; break;
-    case EXT2_IOC_SETVERSION: sz = sizeof(int); break;
-
-    // <include/linux/fd.h>
-    case FDCLRPRM: sz = 0; /* void */ break;
-    case FDSETPRM: sz = sizeof(struct floppy_struct); break;
-    case FDDEFPRM: sz = sizeof(struct floppy_struct); break;
-    case FDGETPRM: sz = sizeof(struct floppy_struct); write = true; break;
-    case FDMSGON: sz = 0; /* void */ break;
-    case FDMSGOFF: sz = 0; /* void */ break;
-    case FDFMTBEG: sz = 0; /* void */ break;
-    case FDFMTTRK: sz = sizeof(struct format_descr); break;
-    case FDFMTEND: sz = 0; /* void */ break;
-    case FDSETEMSGTRESH: sz = 0; /* int */ break;
-    case FDFLUSH: sz = 0; /* void */ break;
-    case FDSETMAXERRS: sz = sizeof(struct floppy_max_errors); break;
-    case FDGETMAXERRS: sz = sizeof(struct floppy_max_errors); write = true; break;
-    case FDGETDRVTYP: sz = sizeof(char[16]); write = true; break;
-    case FDSETDRVPRM: sz = sizeof(struct floppy_drive_params); break;
-    case FDGETDRVPRM: sz = sizeof(struct floppy_drive_params); write = true; break;
-    case FDGETDRVSTAT: sz = sizeof(struct floppy_drive_struct); write = true; break;
-    case FDPOLLDRVSTAT: sz = sizeof(struct floppy_drive_struct); write = true; break;
-    case FDRESET: sz = 0; /* int */ break;
-    case FDGETFDCSTAT: sz = sizeof(struct floppy_fdc_state); write = true; break;
-    case FDWERRORCLR: sz = 0; /* void */ break;
-    case FDWERRORGET: sz = sizeof(struct floppy_write_errors); write = true; break;
-    case FDRAWCMD: sz = sizeof(struct floppy_raw_cmd); /* in-out */ break; /* FIXME: more */
-    case FDTWADDLE: sz = 0; /* void */ break;
-
-    // <include/linux/fs.h>
-    case BLKROSET: sz = sizeof(int); break;
-    case BLKROGET: sz = sizeof(int); write = true; break;
-    case BLKRRPART: sz = 0; /* void */ break;
-    case BLKGETSIZE: sz = sizeof(unsigned long); write = true; break;
-    case BLKFLSBUF: sz = 0; /* void */ break;
-    case BLKRASET: sz = 0; /* int */ break;
-    case BLKRAGET: sz = sizeof(int); write = true; break;
-    case FIBMAP: sz = sizeof(int); /* in-out */ break;
-    case FIGETBSZ: sz = sizeof(int); write = true; break;
-
-    // <include/linux/hdreg.h>
-    case HDIO_GETGEO: sz = sizeof(struct hd_geometry); write = true; break;
-    case HDIO_GET_UNMASKINTR: sz = sizeof(int); write = true; break;
-    case HDIO_GET_MULTCOUNT: sz = sizeof(int); write = true; break;
-    case HDIO_GET_IDENTITY: sz = sizeof(struct hd_driveid); write = true; break;
-    case HDIO_GET_KEEPSETTINGS: sz = sizeof(int); write = true; break;
-#if 0 /* FIXME: define not in my headers */
-    case HDIO_GET_CHIPSET: sz = sizeof(int); write = true; break;
-#endif
-    case HDIO_GET_NOWERR: sz = sizeof(int); write = true; break;
-    case HDIO_GET_DMA: sz = sizeof(int); write = true; break;
-    case HDIO_DRIVE_CMD: sz = sizeof(int); /* in-out */ break;
-    case HDIO_SET_MULTCOUNT: sz = 0; /* int */ break;
-    case HDIO_SET_UNMASKINTR: sz = 0; /* int */ break;
-    case HDIO_SET_KEEPSETTINGS: sz = 0; /* int */ break;
-#if 0 /* FIXME: define not in my headers */
-    case HDIO_SET_CHIPSET: sz = 0; /* int */ break;
-#endif
-    case HDIO_SET_NOWERR: sz = 0; /* int */ break;
-    case HDIO_SET_DMA: sz = 0; /* int */ break;
-
-#if 0 /* FIXME: having problems including header */
-    // <include/linux/if_eql.h>
-    case EQL_ENSLAVE: sz = sizeof(struct ifreq); /* in-out */ break; /* FIXME: more */
-    case EQL_EMANCIPATE: sz = sizeof(struct ifreq); /* in-out */ break; /* FIXME: more */
-    case EQL_GETSLAVECFG: sz = sizeof(struct ifreq); /* in-out */ break; /* FIXME: more */
-    case EQL_SETSLAVECFG: sz = sizeof(struct ifreq); /* in-out */ break; /* FIXME: more */
-    case EQL_GETMASTRCFG: sz = sizeof(struct ifreq); /* in-out */ break; /* FIXME: more */
-    case EQL_SETMASTRCFG: sz = sizeof(struct ifreq); /* in-out */ break; /* FIXME: more */
-#endif
-
-    // <include/linux/if_plip.h>
-    case SIOCDEVPLIP: sz = sizeof(struct ifreq); /* in-out */ break;
-
-#if 0 /* FIXME: having problems including header */
-    // <include/linux/if_ppp.h>
-    case PPPIOCGFLAGS: sz = sizeof(int); write = true; break;
-    case PPPIOCSFLAGS: sz = sizeof(int); break;
-    case PPPIOCGASYNCMAP: sz = sizeof(int); write = true; break;
-    case PPPIOCSASYNCMAP: sz = sizeof(int); break;
-    case PPPIOCGUNIT: sz = sizeof(int); write = true; break;
-    case PPPIOCSINPSIG: sz = sizeof(int); break;
-    case PPPIOCSDEBUG: sz = sizeof(int); break;
-    case PPPIOCGDEBUG: sz = sizeof(int); write = true; break;
-    case PPPIOCGSTAT: sz = sizeof(struct ppp_stats); write = true; break;
-    case PPPIOCGTIME: sz = sizeof(struct ppp_ddinfo); write = true; break;
-    case PPPIOCGXASYNCMAP: sz = sizeof(struct { int [8]; }); write = true; break;
-    case PPPIOCSXASYNCMAP: sz = sizeof(struct { int [8]; }); break;
-    case PPPIOCSMRU: sz = sizeof(int); break;
-    case PPPIOCRASYNCMAP: sz = sizeof(int); break;
-    case PPPIOCSMAXCID: sz = sizeof(int); break;
-#endif
-
-#if 0 /* FIXME: identical to ax25 1st 3 */
-    // <include/linux/ipx.h>
-    case SIOCAIPXITFCRT: sz = sizeof(char); break;
-    case SIOCAIPXPRISLT: sz = sizeof(char); break;
-    case SIOCIPXCFGDATA: sz = sizeof(struct ipx_config_data); write = true; break;
-#endif
-
-    // <include/linux/kd.h>
-    case GIO_FONT: sz = sizeof(char[8192]); write = true; break;
-    case PIO_FONT: sz = sizeof(char[8192]); break;
-#if 0 /* FIXME: struct not in my defines */
-    case GIO_FONTX: sz = sizeof(struct console_font_desc); /* in-out */ break; /* FIXME: more */
-    case PIO_FONTX: sz = sizeof(struct console_font_desc); break; /* FIXME: more */
-#endif
-    case GIO_CMAP: sz = sizeof(char[48]); write = true; break;
-    case PIO_CMAP: sz = 0; /* const struct { char [48]; } */ break;
-    case KIOCSOUND: sz = 0; /* int */ break;
-    case KDMKTONE: sz = 0; /* int */ break;
-    case KDGETLED: sz = sizeof(char); write = true; break;
-    case KDSETLED: sz = 0; /* int */ break;
-    case KDGKBTYPE: sz = sizeof(char); write = true; break;
-    case KDADDIO: sz = 0; /* int */ break; /* FIXME: more */
-    case KDDELIO: sz = 0; /* int */ break; /* FIXME: more */
-    case KDENABIO: sz = 0; /* void */ break; /* FIXME: more */
-    case KDDISABIO: sz = 0; /* void */ break; /* FIXME: more */
-    case KDSETMODE: sz = 0; /* int */ break;
-    case KDGETMODE: sz = sizeof(int); write = true; break;
-    case KDMAPDISP: sz = 0; /* void */ break; /* FIXME: more */
-    case KDUNMAPDISP: sz = 0; /* void */ break; /* FIXME: more */
-    case GIO_SCRNMAP: sz = sizeof(char[E_TABSZ]); write = true; break;
-    case PIO_SCRNMAP: sz = sizeof(char[E_TABSZ]); break;
-    case GIO_UNISCRNMAP: sz = sizeof(short[E_TABSZ]); write = true; break;
-    case PIO_UNISCRNMAP: sz = sizeof(short[E_TABSZ]); break;
-    case GIO_UNIMAP: sz = sizeof(struct unimapdesc); /* in-out */ break; /* FIXME: more */
-    case PIO_UNIMAP: sz = sizeof(struct unimapdesc); break; /* FIXME: more */
-    case PIO_UNIMAPCLR: sz = sizeof(struct unimapinit); break;
-    case KDGKBMODE: sz = sizeof(int); write = true; break;
-    case KDSKBMODE: sz = 0; /* int */ break;
-    case KDGKBMETA: sz = sizeof(int); write = true; break;
-    case KDSKBMETA: sz = 0; /* int */ break;
-    case KDGKBLED: sz = sizeof(int); write = true; break;
-    case KDSKBLED: sz = 0; /* int */ break;
-    case KDGKBENT: sz = sizeof(struct kbentry); /* in-out */ break;
-    case KDSKBENT: sz = sizeof(struct kbentry); break;
-    case KDGKBSENT: sz = sizeof(struct kbsentry); /* in-out */ break;
-    case KDSKBSENT: sz = sizeof(struct kbsentry); break;
-    case KDGKBDIACR: sz = sizeof(struct kbdiacrs); write = true; break;
-    case KDSKBDIACR: sz = sizeof(struct kbdiacrs); break;
-    case KDGETKEYCODE: sz = sizeof(struct kbkeycode); /* in-out */ break;
-    case KDSETKEYCODE: sz = sizeof(struct kbkeycode); break;
-    case KDSIGACCEPT: sz = 0; /* int */ break;
-
-    // <include/linux/lp.h>
-    case LPCHAR: sz = 0; /* int */ break;
-    case LPTIME: sz = 0; /* int */ break;
-    case LPABORT: sz = 0; /* int */ break;
-    case LPSETIRQ: sz = 0; /* int */ break;
-    case LPGETIRQ: sz = sizeof(int); write = true; break;
-    case LPWAIT: sz = 0; /* int */ break;
-    case LPCAREFUL: sz = 0; /* int */ break;
-    case LPABORTOPEN: sz = 0; /* int */ break;
-    case LPGETSTATUS: sz = sizeof(int); write = true; break;
-    case LPRESET: sz = 0; /* void */ break;
-#if 0 /* FIXME: define not in my headers */
-    case LPGETSTATS: sz = sizeof(struct lp_stats); write = true; break;
-#endif
-
-#if 0 /* FIXME: identical to ax25 1st 2 */
-    // <include/linux/mroute.h>
-    case SIOCGETVIFCNT: sz = sizeof(struct sioc_vif_req); /* in-out */ break;
-    case SIOCGETSGCNT: sz = sizeof(struct sioc_sg_req); /* in-out */ break;
-#endif
-
-    // <include/linux/mtio.h>
-    case MTIOCTOP: sz = sizeof(struct mtop); break;
-    case MTIOCGET: sz = sizeof(struct mtget); write = true; break;
-    case MTIOCPOS: sz = sizeof(struct mtpos); write = true; break;
-    case MTIOCGETCONFIG: sz = sizeof(struct mtconfiginfo); write = true; break;
-    case MTIOCSETCONFIG: sz = sizeof(struct mtconfiginfo); break;
-
-#if 0 /* FIXME: define not in my headers */
-    // <include/linux/netrom.h>
-    case SIOCNRGETPARMS: sz = sizeof(struct nr_parms_struct); /* in-out */ break;
-    case SIOCNRSETPARMS: sz = sizeof(struct nr_parms_struct); break;
-    case SIOCNRDECOBS: sz = 0; /* void */ break;
-    case SIOCNRRTCTL: sz = sizeof(int); break;
-#endif
-
-#if 0 /* FIXME: define not in my headers */
-    // <include/linux/sbpcd.h>
-    case DDIOCSDBG: sz = sizeof(int); break;
-    case CDROMAUDIOBUFSIZ: sz = 0; /* int */ break;
-#endif
-
-#if 0 /* FIXME: define not in my headers */
-    // <include/linux/scc.h>
-    case TIOCSCCINI: sz = 0; /* void */ break;
-    case TIOCCHANINI: sz = sizeof(struct scc_modem); break;
-    case TIOCGKISS: sz = sizeof(struct ioctl_command); /* in-out */ break;
-    case TIOCSKISS: sz = sizeof(struct ioctl_command); break;
-    case TIOCSCCSTAT: sz = sizeof(struct scc_stat); write = true; break;
-#endif
-
-#if 0 /* FIXME: define not in my headers */
-    // <include/linux/scsi.h>
-    case SCSI_IOCTL_GET_IDLUN: sz = sizeof(struct { int [2]; }); write = true; break;
-    case SCSI_IOCTL_TAGGED_ENABLE: sz = 0; /* void */ break;
-    case SCSI_IOCTL_TAGGED_DISABLE: sz = 0; /* void */ break;
-    case SCSI_IOCTL_PROBE_HOST: sz = sizeof(int); break; /* FIXME: more */
-#endif
-
-    // <include/linux/smb_fs.h>
-    case SMB_IOC_GETMOUNTUID: sz = sizeof(uid_t); write = true; break;
-
     // <include/linux/sockios.h>
-    case SIOCADDRT: sz = sizeof(struct rtentry); break; /* FIXME: more */
-    case SIOCDELRT: sz = sizeof(struct rtentry); break; /* FIXME: more */
-    case SIOCGIFNAME: sz = 0; /* char [] */ break;
-    case SIOCSIFLINK: sz = 0; /* void */ break;
     case SIOCGIFCONF: {
         struct ifconf input;
         CHECK_DEF(ii, arg, sizeof(struct ifconf), NULL);
@@ -2035,193 +2274,6 @@ handle_pre_ioctl(void *drcontext, cls_syscall_t *pt, sysarg_iter_info_t *ii)
             CHECK_ADDR(ii, input.ifc_buf, input.ifc_len, "SIOCGIFCONF ifc_buf");
         return;
     }
-    case SIOCGIFFLAGS: sz = sizeof(struct ifreq); /* in-out */ break;
-    case SIOCSIFFLAGS: sz = sizeof(struct ifreq); break;
-    case SIOCGIFADDR: sz = sizeof(struct ifreq); /* in-out */ break;
-    case SIOCSIFADDR: sz = sizeof(struct ifreq); break;
-    case SIOCGIFDSTADDR: sz = sizeof(struct ifreq); /* in-out */ break;
-    case SIOCSIFDSTADDR: sz = sizeof(struct ifreq); break;
-    case SIOCGIFBRDADDR: sz = sizeof(struct ifreq); /* in-out */ break;
-    case SIOCSIFBRDADDR: sz = sizeof(struct ifreq); break;
-    case SIOCGIFNETMASK: sz = sizeof(struct ifreq); /* in-out */ break;
-    case SIOCSIFNETMASK: sz = sizeof(struct ifreq); break;
-    case SIOCGIFMETRIC: sz = sizeof(struct ifreq); /* in-out */ break;
-    case SIOCSIFMETRIC: sz = sizeof(struct ifreq); break;
-    case SIOCGIFMEM: sz = sizeof(struct ifreq); /* in-out */ break;
-    case SIOCSIFMEM: sz = sizeof(struct ifreq); break;
-    case SIOCGIFMTU: sz = sizeof(struct ifreq); /* in-out */ break;
-    case SIOCSIFMTU: sz = sizeof(struct ifreq); break;
-#if 0 /* FIXME: define not in my headers */
-    case OLD_SIOCGIFHWADDR: sz = sizeof(struct ifreq); /* in-out */ break;
-#endif
-    case SIOCSIFHWADDR: sz = sizeof(struct ifreq); break;     /* FIXME: more */
-    case SIOCGIFENCAP: sz = sizeof(int); write = true; break;
-    case SIOCSIFENCAP: sz = sizeof(int); break;
-    case SIOCGIFHWADDR: sz = sizeof(struct ifreq); /* in-out */ break;
-    case SIOCGIFSLAVE: sz = 0; /* void */ break;
-    case SIOCSIFSLAVE: sz = 0; /* void */ break;
-    case SIOCADDMULTI: sz = sizeof(struct ifreq); break;
-    case SIOCDELMULTI: sz = sizeof(struct ifreq); break;
-#if 0 /* FIXME: define not in my headers */
-    case SIOCADDRTOLD: sz = 0; /* void */ break;
-    case SIOCDELRTOLD: sz = 0; /* void */ break;
-#endif
-    case SIOCDARP: sz = sizeof(struct arpreq); break;
-    case SIOCGARP: sz = sizeof(struct arpreq); /* in-out */ break;
-    case SIOCSARP: sz = sizeof(struct arpreq); break;
-    case SIOCDRARP: sz = sizeof(struct arpreq); break;
-    case SIOCGRARP: sz = sizeof(struct arpreq); /* in-out */ break;
-    case SIOCSRARP: sz = sizeof(struct arpreq); break;
-    case SIOCGIFMAP: sz = sizeof(struct ifreq); /* in-out */ break;
-    case SIOCSIFMAP: sz = sizeof(struct ifreq); break;
-
-    // <include/linux/soundcard.h>
-    case SNDCTL_SEQ_RESET: sz = 0; /* void */ break;
-    case SNDCTL_SEQ_SYNC: sz = 0; /* void */ break;
-    case SNDCTL_SYNTH_INFO: sz = sizeof(struct synth_info); /* in-out */ break;
-    case SNDCTL_SEQ_CTRLRATE: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_SEQ_GETOUTCOUNT: sz = sizeof(int); write = true; break;
-    case SNDCTL_SEQ_GETINCOUNT: sz = sizeof(int); write = true; break;
-    case SNDCTL_SEQ_PERCMODE: sz = 0; /* void */ break;
-    case SNDCTL_FM_LOAD_INSTR: sz = sizeof(struct sbi_instrument); break;
-    case SNDCTL_SEQ_TESTMIDI: sz = sizeof(int); break;
-    case SNDCTL_SEQ_RESETSAMPLES: sz = sizeof(int); break;
-    case SNDCTL_SEQ_NRSYNTHS: sz = sizeof(int); write = true; break;
-    case SNDCTL_SEQ_NRMIDIS: sz = sizeof(int); write = true; break;
-    case SNDCTL_MIDI_INFO: sz = sizeof(struct midi_info); /* in-out */ break;
-    case SNDCTL_SEQ_THRESHOLD: sz = sizeof(int); break;
-    case SNDCTL_SYNTH_MEMAVL: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_FM_4OP_ENABLE: sz = sizeof(int); break;
-#if 0 /* FIXME: define not in my headers */
-    case SNDCTL_PMGR_ACCESS: sz = sizeof(struct patmgr_info); /* in-out */ break;
-#endif
-    case SNDCTL_SEQ_PANIC: sz = 0; /* void */ break;
-    case SNDCTL_SEQ_OUTOFBAND: sz = sizeof(struct seq_event_rec); break;
-    case SNDCTL_TMR_TIMEBASE: sz = sizeof(int); /* in-out */ break;
-#if 0 /* FIXME: identical to TCSETS and subsequent 2 */
-    case SNDCTL_TMR_START: sz = 0; /* void */ break;
-    case SNDCTL_TMR_STOP: sz = 0; /* void */ break;
-    case SNDCTL_TMR_CONTINUE: sz = 0; /* void */ break;
-#endif
-    case SNDCTL_TMR_TEMPO: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_TMR_SOURCE: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_TMR_METRONOME: sz = sizeof(int); break;
-    case SNDCTL_TMR_SELECT: sz = sizeof(int); /* in-out */ break;
-#if 0 /* FIXME: define not in my headers */
-    case SNDCTL_PMGR_IFACE: sz = sizeof(struct patmgr_info); /* in-out */ break;
-#endif
-    case SNDCTL_MIDI_PRETIME: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_MIDI_MPUMODE: sz = sizeof(int); break;
-#if 0 /* FIXME: struct not in my headers */
-    case SNDCTL_MIDI_MPUCMD: sz = sizeof(struct mpu_command_rec); /* in-out */ break;
-#endif
-    case SNDCTL_DSP_RESET: sz = 0; /* void */ break;
-    case SNDCTL_DSP_SYNC: sz = 0; /* void */ break;
-    case SNDCTL_DSP_SPEED: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_DSP_STEREO: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_DSP_GETBLKSIZE: sz = sizeof(int); /* in-out */ break;
-    case SOUND_PCM_WRITE_CHANNELS: sz = sizeof(int); /* in-out */ break;
-    case SOUND_PCM_WRITE_FILTER: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_DSP_POST: sz = 0; /* void */ break;
-    case SNDCTL_DSP_SUBDIVIDE: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_DSP_SETFRAGMENT: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_DSP_GETFMTS: sz = sizeof(int); write = true; break;
-    case SNDCTL_DSP_SETFMT: sz = sizeof(int); /* in-out */ break;
-    case SNDCTL_DSP_GETOSPACE: sz = sizeof(struct audio_buf_info); write = true; break;
-    case SNDCTL_DSP_GETISPACE: sz = sizeof(struct audio_buf_info); write = true; break;
-    case SNDCTL_DSP_NONBLOCK: sz = 0; /* void */ break;
-    case SOUND_PCM_READ_RATE: sz = sizeof(int); write = true; break;
-    case SOUND_PCM_READ_CHANNELS: sz = sizeof(int); write = true; break;
-    case SOUND_PCM_READ_BITS: sz = sizeof(int); write = true; break;
-    case SOUND_PCM_READ_FILTER: sz = sizeof(int); write = true; break;
-    case SNDCTL_COPR_RESET: sz = 0; /* void */ break;
-    case SNDCTL_COPR_LOAD: sz = sizeof(struct copr_buffer); break;
-    case SNDCTL_COPR_RDATA: sz = sizeof(struct copr_debug_buf); /* in-out */ break;
-    case SNDCTL_COPR_RCODE: sz = sizeof(struct copr_debug_buf); /* in-out */ break;
-    case SNDCTL_COPR_WDATA: sz = sizeof(struct copr_debug_buf); break;
-    case SNDCTL_COPR_WCODE: sz = sizeof(struct copr_debug_buf); break;
-    case SNDCTL_COPR_RUN: sz = sizeof(struct copr_debug_buf); /* in-out */ break;
-    case SNDCTL_COPR_HALT: sz = sizeof(struct copr_debug_buf); /* in-out */ break;
-    case SNDCTL_COPR_SENDMSG: sz = sizeof(struct copr_msg); break;
-    case SNDCTL_COPR_RCVMSG: sz = sizeof(struct copr_msg); write = true; break;
-    case SOUND_MIXER_READ_VOLUME: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_BASS: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_TREBLE: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_SYNTH: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_PCM: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_SPEAKER: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_LINE: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_MIC: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_CD: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_IMIX: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_ALTPCM: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_RECLEV: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_IGAIN: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_OGAIN: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_LINE1: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_LINE2: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_LINE3: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_MUTE: sz = sizeof(int); write = true; break;
-#if 0 /* FIXME: identical to SOUND_MIXER_READ_MUTE */
-    case SOUND_MIXER_READ_ENHANCE: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_LOUD: sz = sizeof(int); write = true; break;
-#endif
-    case SOUND_MIXER_READ_RECSRC: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_DEVMASK: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_RECMASK: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_STEREODEVS: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_READ_CAPS: sz = sizeof(int); write = true; break;
-    case SOUND_MIXER_WRITE_VOLUME: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_BASS: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_TREBLE: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_SYNTH: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_PCM: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_SPEAKER: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_LINE: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_MIC: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_CD: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_IMIX: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_ALTPCM: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_RECLEV: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_IGAIN: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_OGAIN: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_LINE1: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_LINE2: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_LINE3: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_MUTE: sz = sizeof(int); /* in-out */ break;
-#if 0 /* FIXME: identical to SOUND_MIXER_WRITE_MUTE */
-    case SOUND_MIXER_WRITE_ENHANCE: sz = sizeof(int); /* in-out */ break;
-    case SOUND_MIXER_WRITE_LOUD: sz = sizeof(int); /* in-out */ break;
-#endif
-    case SOUND_MIXER_WRITE_RECSRC: sz = sizeof(int); /* in-out */ break;
-
-#if 0 /* FIXME: define not in my headers */
-    // <include/linux/umsdos_fs.h>
-    case UMSDOS_READDIR_DOS: sz = sizeof(struct umsdos_ioctl); /* in-out */ break;
-    case UMSDOS_UNLINK_DOS: sz = sizeof(struct umsdos_ioctl); break;
-    case UMSDOS_RMDIR_DOS: sz = sizeof(struct umsdos_ioctl); break;
-    case UMSDOS_STAT_DOS: sz = sizeof(struct umsdos_ioctl); /* in-out */ break;
-    case UMSDOS_CREAT_EMD: sz = sizeof(struct umsdos_ioctl); break;
-    case UMSDOS_UNLINK_EMD: sz = sizeof(struct umsdos_ioctl); break;
-    case UMSDOS_READDIR_EMD: sz = sizeof(struct umsdos_ioctl); /* in-out */ break;
-    case UMSDOS_GETVERSION: sz = sizeof(struct umsdos_ioctl); write = true; break;
-    case UMSDOS_INIT_EMD: sz = 0; /* void */ break;
-    case UMSDOS_DOS_SETUP: sz = sizeof(struct umsdos_ioctl); break;
-    case UMSDOS_RENAME_DOS: sz = sizeof(struct umsdos_ioctl); break;
-#endif
-
-    // <include/linux/vt.h>
-    case VT_OPENQRY: sz = sizeof(int); write = true; break;
-    case VT_GETMODE: sz = sizeof(struct vt_mode); write = true; break;
-    case VT_SETMODE: sz = sizeof(struct vt_mode); break;
-    case VT_GETSTATE: sz = sizeof(struct vt_stat); write = true; break;
-    case VT_SENDSIG: sz = 0; /* void */ break;
-    case VT_RELDISP: sz = 0; /* int */ break;
-    case VT_ACTIVATE: sz = 0; /* int */ break;
-    case VT_WAITACTIVE: sz = 0; /* int */ break;
-    case VT_DISALLOCATE: sz = 0; /* int */ break;
-    case VT_RESIZE: sz = sizeof(struct vt_sizes); break;
-    case VT_RESIZEX: sz = sizeof(struct vt_consize); break;
 
     /* include <linux/ipmi.h> PR 531644 */
     case IPMICTL_SEND_COMMAND:
@@ -2261,39 +2313,6 @@ handle_pre_ioctl(void *drcontext, cls_syscall_t *pt, sysarg_iter_info_t *ii)
         }
         return;
     }
-    case IPMICTL_REGISTER_FOR_CMD: sz = sizeof(struct ipmi_cmdspec); break;
-    case IPMICTL_UNREGISTER_FOR_CMD: sz = sizeof(struct ipmi_cmdspec); break;
-    case IPMICTL_REGISTER_FOR_CMD_CHANS: sz = sizeof(struct ipmi_cmdspec_chans); break;
-    case IPMICTL_UNREGISTER_FOR_CMD_CHANS: sz = sizeof(struct ipmi_cmdspec_chans); break;
-    case IPMICTL_SET_GETS_EVENTS_CMD: sz = sizeof(int); break;
-    case IPMICTL_SET_MY_CHANNEL_ADDRESS_CMD:
-        sz = sizeof(struct ipmi_channel_lun_address_set); break;
-    case IPMICTL_GET_MY_CHANNEL_ADDRESS_CMD:
-        sz = sizeof(struct ipmi_channel_lun_address_set); write = true; break;
-    case IPMICTL_SET_MY_CHANNEL_LUN_CMD:
-        sz = sizeof(struct ipmi_channel_lun_address_set); break;
-    case IPMICTL_GET_MY_CHANNEL_LUN_CMD:
-        sz = sizeof(struct ipmi_channel_lun_address_set); write = true; break;
-    case IPMICTL_SET_MY_ADDRESS_CMD: sz = sizeof(uint); break;
-    case IPMICTL_GET_MY_ADDRESS_CMD: sz = sizeof(uint); write = true; break;
-    case IPMICTL_SET_MY_LUN_CMD: sz = sizeof(uint); break;
-    case IPMICTL_GET_MY_LUN_CMD: sz = sizeof(uint); write = true; break;
-    case IPMICTL_SET_TIMING_PARMS_CMD:
-        sz = sizeof(struct ipmi_timing_parms); break;
-    case IPMICTL_GET_TIMING_PARMS_CMD:
-        sz = sizeof(struct ipmi_timing_parms); write = true; break;
-    case IPMICTL_GET_MAINTENANCE_MODE_CMD: sz = sizeof(int); write = true; break;
-    case IPMICTL_SET_MAINTENANCE_MODE_CMD: sz = sizeof(int); break;
-
-    default: 
-#if 0/* FIXME PR 494716: disabling since wasting a lot of log space */
-        /* FIXME PR 494716: this and the sycall_vmkuw.c warning are
-         * both erroneous b/c they don't consider the other's code
-         */
-        LOG(1, "WARNING: unknown ioctl request %d\n", request); 
-        IF_DEBUG(report_callstack(drcontext);)
-#endif
-        break;
     }
 
     if (sz > 0) {
