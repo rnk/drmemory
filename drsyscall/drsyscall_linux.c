@@ -2062,8 +2062,8 @@ drsyscall_os_init(void *drcontext)
             hashtable_add(&systable, (void *) &info->num, (void *) info);
         ASSERT(ok, "no dups");
         IF_DEBUG(ok =)
-            hashtable_add(&name2num_table, (void *) syscall_info[i].name,
-                          (void *) &syscall_info[i].num);
+            hashtable_add(&name2num_table, (void *) info->name,
+                          (void *) &info->num);
         ASSERT(ok, "no dups");
     }
     dr_recurlock_unlock(systable_lock);
