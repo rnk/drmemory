@@ -1069,7 +1069,11 @@ endif (TOOL_DR_HEAPSTAT AND BUILD_VISUALIZER)
 
 # symbol query tool
 add_executable(symquery tools/symquery.c)
-set(old_rpath ${DynamoRIO_RPATH})
+if (DEFINED DynamoRIO_RPATH)
+  set(old_rpath ${DynamoRIO_RPATH})
+else ()
+  set(old_rpath OFF)
+endif ()
 set(DynamoRIO_RPATH ON)
 configure_DynamoRIO_standalone(symquery)
 use_DynamoRIO_extension(symquery drsyms)
@@ -1198,6 +1202,7 @@ else (WIN32)
     set(drconfig_copy "${PROJECT_BINARY_DIR}/${BUILD_BIN_PREFIX}/drconfig")
     add_custom_target(drconfig_copy_tgt ALL DEPENDS "${drconfig_copy}")
     add_custom_command(OUTPUT "${drconfig_copy}" 
+      DEPENDS drconfig
       COMMAND ${CMAKE_COMMAND}
       ARGS -E copy "${DynamoRIO_DIR}/../${BIN_ARCH}/drconfig"
       "${drconfig_copy}" VERBATIM)
