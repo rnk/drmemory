@@ -2024,6 +2024,7 @@ syscall_info_t syscall_ioctl_info[] = {
 #define NUM_IOCTL_STATIC_ENTRIES BUFFER_SIZE_ELEMENTS(syscall_ioctl_info)
 
 #undef IOCTL
+#undef FD_REQ
 
 #undef OK
 #undef UNKNOWN
@@ -2033,6 +2034,9 @@ syscall_info_t syscall_ioctl_info[] = {
 #undef CT
 #undef CSTRING
 #undef RET
+#undef RLONG
+#undef INT_TYPE
+#undef UINT_TYPE
 
 /***************************************************************************
  * TOP-LEVEL
@@ -2250,7 +2254,7 @@ ipmi_addr_len_adjust(struct ipmi_addr * addr)
 static void
 handle_pre_ioctl(void *drcontext, cls_syscall_t *pt, sysarg_iter_info_t *ii)
 {
-    uint request = (uint) pt->sysarg[1];
+    int request = (int) pt->sysarg[1];
     void *arg = (void *) pt->sysarg[IOCTL_BUF_ARGNUM];
     if (arg == NULL)
         return;
@@ -2332,7 +2336,7 @@ handle_pre_ioctl(void *drcontext, cls_syscall_t *pt, sysarg_iter_info_t *ii)
 static void
 handle_post_ioctl(void *drcontext, cls_syscall_t *pt, sysarg_iter_info_t *ii)
 {
-    uint request = (uint) pt->sysarg[1];
+    int request = (int) pt->sysarg[1];
     void *arg = (ptr_uint_t *) pt->sysarg[2];
     ptr_int_t result = dr_syscall_get_result(drcontext);
     if (arg == NULL)
