@@ -1340,7 +1340,7 @@ static syscall_info_t syscall_info[] = {
     {{PACKNUM(43,-1),0},"accept", OK, RLONG, 3,
      {
          {1, -2, WI|CT, SYSARG_TYPE_SOCKADDR},
-         {2, sizeof(socklen_t), W},
+         {2, sizeof(socklen_t), W, UINT_TYPE},
      }
     },
     {{PACKNUM(44,-1),0},"sendto", OK, RLONG, 6,
@@ -1353,6 +1353,7 @@ static syscall_info_t syscall_info[] = {
      {
          {1, -2, W},
          {4, -5, WI|CT, SYSARG_TYPE_SOCKADDR},
+         {5, sizeof(socklen_t), W, UINT_TYPE},
      }
     },
     {{PACKNUM(46,-1),0},"sendmsg", OK, RLONG, 3,
@@ -1375,13 +1376,13 @@ static syscall_info_t syscall_info[] = {
     {{PACKNUM(51,-1),0},"getsockname", OK, RLONG, 3,
      {
          {1, -2, WI|CT, SYSARG_TYPE_SOCKADDR},
-         {2, sizeof(socklen_t), W},
+         {2, sizeof(socklen_t), W, UINT_TYPE},
      }
     },
     {{PACKNUM(52,-1),0},"getpeername", OK, RLONG, 3,
      {
          {1, -2, WI|CT, SYSARG_TYPE_SOCKADDR},
-         {2, sizeof(socklen_t), W},
+         {2, sizeof(socklen_t), W, UINT_TYPE},
      }
     },
     {{PACKNUM(53,-1),0},"socketpair", OK, RLONG, 4,
@@ -1397,7 +1398,7 @@ static syscall_info_t syscall_info[] = {
     {{PACKNUM(55,-1),0},"getsockopt", OK, RLONG, 5,
      {
          {3, -4, WI},
-         {4, sizeof(socklen_t), W},
+         {4, sizeof(socklen_t), W, UINT_TYPE},
      }
     },
     {{PACKNUM(64,-1),0},"semget", OK, RLONG, 3, },
@@ -1444,7 +1445,7 @@ static syscall_info_t syscall_info[] = {
     {{PACKNUM(288,-1),0},"paccept", OK, RLONG, 4,
      {
          {1,-2,WI|CT,SYSARG_TYPE_SOCKADDR},
-         {2,sizeof(int),W},
+         {2,sizeof(int),W, INT_TYPE},
      }
     }, /* == accept4 */
 
@@ -2416,7 +2417,8 @@ check_iov(cls_syscall_t *pt, sysarg_iter_info_t *ii,
             }
             LOG(3, "check_iov: iov entry %d, buf="PFX", len="PIFX"\n",
                 i, iov_copy.iov_base, iov_copy.iov_len);
-            if (!report_memarg_type(ii, ordinal, arg_flags, (app_pc)iov_copy.iov_base,
+            if (iov_copy.iov_len > 0 &&
+                !report_memarg_type(ii, ordinal, arg_flags, (app_pc)iov_copy.iov_base,
                                     iov_copy.iov_len, id, DRSYS_TYPE_STRUCT, NULL))
                 return;
             if (done)
@@ -2527,8 +2529,7 @@ check_msghdr(void *drcontext, cls_syscall_t *pt, sysarg_iter_info_t *ii,
                                     DRSYS_TYPE_INT, NULL))
                 return;
             if (pre_control != NULL && len > 0) {
-                if (!report_memarg_type(ii, ordinal, arg_flags,
-                                        (app_pc)pt->sysarg[3]/*msg_control*/, len,
+                if (!report_memarg_type(ii, ordinal, arg_flags, pre_control, len,
                                         "recvmsg msg_control", DRSYS_TYPE_STRUCT, NULL))
                     return;
             } else
