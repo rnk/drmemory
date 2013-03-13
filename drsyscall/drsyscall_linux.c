@@ -2686,6 +2686,10 @@ handle_pre_socketcall(void *drcontext, cls_syscall_t *pt, sysarg_iter_info_t *ii
                 pt->sysarg[2] = (ptr_int_t) ptr1;
                 pt->sysarg[3] = val_socklen;
             }
+            if (request == SYS_RECVFROM &&
+                !report_memarg_type(ii, SOCK_ARRAY_ARG, SYSARG_WRITE, ptr2, sizeof(socklen_t),
+                                    "recvfrom socklen", DRSYS_TYPE_UNSIGNED_INT, NULL))
+                return;
             if (!report_memarg_type(ii, SOCK_ARRAY_ARG, SYSARG_WRITE, ptr1, val_socklen, 
                                     (request == SYS_SENDTO) ? "sendto addr" :
                                     "recvfrom addr", DRSYS_TYPE_STRUCT, NULL))

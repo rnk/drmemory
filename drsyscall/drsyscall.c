@@ -1153,7 +1153,7 @@ should_ignore_arg(cls_syscall_t *pt, sysarg_iter_info_t *ii,
     int ignore_flags = ((SYSARG_IGNORE_IF_NEXT_NULL|
                          SYSARG_IGNORE_IF_PREV_NULL) &
                         sysinfo->arg[i].flags);
-    int if_null_arg;
+    int if_null_arg = -1;
     if (ignore_flags == 0)
         return false;
 
