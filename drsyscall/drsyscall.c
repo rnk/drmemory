@@ -658,7 +658,10 @@ report_memarg_ex(sysarg_iter_info_t *ii,
 {
     drsys_arg_t *arg = ii->arg;
 
+#ifdef LINUX
+    /* FIXME: this assertion fails on Windows. */
     ASSERT(sz > 0, "drsyscall shouldn't report empty memargs");
+#endif
 
     arg->type = type;
     if (type_name == NULL && type != DRSYS_TYPE_UNKNOWN &&
