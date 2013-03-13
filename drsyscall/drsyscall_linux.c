@@ -306,11 +306,10 @@ extern syscall_info_t syscall_ioctl_info[];
 #define R (SYSARG_READ)
 #define WI (SYSARG_WRITE | SYSARG_LENGTH_INOUT)
 #define CT (SYSARG_COMPLEX_TYPE)
+#define HT (SYSARG_HAS_TYPE)
 #define CSTRING (SYSARG_TYPE_CSTRING)
 #define RET (SYSARG_POST_SIZE_RETVAL)
 #define RLONG (DRSYS_TYPE_SIGNED_INT) /* they all return type "long" */
-#define INT_TYPE DRSYS_TYPE_SIGNED_INT
-#define UINT_TYPE DRSYS_TYPE_UNSIGNED_INT
 static syscall_info_t syscall_info[] = {
     {{PACKNUM(219,0),0},"restart_syscall", OK, RLONG, 0,},
     {{PACKNUM(60,1),0},"exit", OK, RLONG, 1,},
@@ -1340,7 +1339,7 @@ static syscall_info_t syscall_info[] = {
     {{PACKNUM(43,-1),0},"accept", OK, RLONG, 3,
      {
          {1, -2, WI|CT, SYSARG_TYPE_SOCKADDR},
-         {2, sizeof(socklen_t), W, UINT_TYPE},
+         {2, sizeof(socklen_t), W|HT, DRSYS_TYPE_UNSIGNED_INT},
      }
     },
     {{PACKNUM(44,-1),0},"sendto", OK, RLONG, 6,
@@ -1353,7 +1352,7 @@ static syscall_info_t syscall_info[] = {
      {
          {1, -2, W},
          {4, -5, WI|CT, SYSARG_TYPE_SOCKADDR},
-         {5, sizeof(socklen_t), W, UINT_TYPE},
+         {5, sizeof(socklen_t), W|HT|SYSARG_IGNORE_IF_PREV_NULL, DRSYS_TYPE_UNSIGNED_INT},
      }
     },
     {{PACKNUM(46,-1),0},"sendmsg", OK, RLONG, 3,
@@ -1376,13 +1375,13 @@ static syscall_info_t syscall_info[] = {
     {{PACKNUM(51,-1),0},"getsockname", OK, RLONG, 3,
      {
          {1, -2, WI|CT, SYSARG_TYPE_SOCKADDR},
-         {2, sizeof(socklen_t), W, UINT_TYPE},
+         {2, sizeof(socklen_t), W|HT, DRSYS_TYPE_UNSIGNED_INT},
      }
     },
     {{PACKNUM(52,-1),0},"getpeername", OK, RLONG, 3,
      {
          {1, -2, WI|CT, SYSARG_TYPE_SOCKADDR},
-         {2, sizeof(socklen_t), W, UINT_TYPE},
+         {2, sizeof(socklen_t), W|HT, DRSYS_TYPE_UNSIGNED_INT},
      }
     },
     {{PACKNUM(53,-1),0},"socketpair", OK, RLONG, 4,
@@ -1398,7 +1397,7 @@ static syscall_info_t syscall_info[] = {
     {{PACKNUM(55,-1),0},"getsockopt", OK, RLONG, 5,
      {
          {3, -4, WI},
-         {4, sizeof(socklen_t), W, UINT_TYPE},
+         {4, sizeof(socklen_t), W|HT, DRSYS_TYPE_UNSIGNED_INT},
      }
     },
     {{PACKNUM(64,-1),0},"semget", OK, RLONG, 3, },
@@ -1445,7 +1444,7 @@ static syscall_info_t syscall_info[] = {
     {{PACKNUM(288,-1),0},"paccept", OK, RLONG, 4,
      {
          {1,-2,WI|CT,SYSARG_TYPE_SOCKADDR},
-         {2,sizeof(int),W, INT_TYPE},
+         {2,sizeof(int),W, DRSYS_TYPE_SIGNED_INT},
      }
     }, /* == accept4 */
 
@@ -1470,6 +1469,9 @@ static syscall_info_t syscall_info[] = {
 #define FD_REQ \
     {0, sizeof(int), SYSARG_INLINED, INT_TYPE}, /* fd */ \
     {1, sizeof(int), SYSARG_INLINED, INT_TYPE}  /* request */
+
+#define INT_TYPE DRSYS_TYPE_SIGNED_INT
+#define UINT_TYPE DRSYS_TYPE_UNSIGNED_INT
 
 syscall_info_t syscall_ioctl_info[] = {
     // <include/asm-i386/socket.h>
@@ -2026,6 +2028,8 @@ syscall_info_t syscall_ioctl_info[] = {
 
 #undef IOCTL
 #undef FD_REQ
+#undef INT_TYPE
+#undef UINT_TYPE
 
 #undef OK
 #undef UNKNOWN
@@ -2033,11 +2037,10 @@ syscall_info_t syscall_ioctl_info[] = {
 #undef R
 #undef WI
 #undef CT
+#undef HT
 #undef CSTRING
 #undef RET
 #undef RLONG
-#undef INT_TYPE
-#undef UINT_TYPE
 
 /***************************************************************************
  * TOP-LEVEL

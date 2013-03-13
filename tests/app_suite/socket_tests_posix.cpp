@@ -57,6 +57,8 @@ TEST(SocketTests, ClientServer) {
     child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0) {
+        struct sockaddr from_addr;
+        socklen_t from_len;
         int fd_client;
         struct hostent *hp = gethostbyname("localhost");
         ASSERT_NE(hp, (struct hostent *)NULL);
@@ -73,8 +75,11 @@ TEST(SocketTests, ClientServer) {
         ASSERT_NE(res, -1);
         res = send(fd_client, "hello", strlen("hello")+1, 0);
         ASSERT_NE(res, -1);
-        res = recv(fd_client, buf, sizeof(buf), 0);
+        res = recvfrom(fd_client, buf, sizeof(buf), 0, &from_addr, &from_len);
         ASSERT_NE(res, -1);
+        ASSERT_GE(offsetof(struct sockaddr, sa_family) +
+                  sizeof(from_addr.sa_family), from_len);
+        ASSERT_EQ(saddr.sin_family, from_addr.sa_family);
         ASSERT_STREQ(buf, "goodbye");
 
         close(fd_client);
