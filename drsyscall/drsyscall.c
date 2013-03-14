@@ -1153,26 +1153,17 @@ static bool
 should_ignore_arg(cls_syscall_t *pt, sysarg_iter_info_t *ii,
                   syscall_info_t *sysinfo, int i)
 {
-    int ignore_flags = ((SYSARG_IGNORE_IF_NEXT_NULL|
-                         SYSARG_IGNORE_IF_PREV_NULL) &
-                        sysinfo->arg[i].flags);
     int if_null_arg = -1;
-    if (ignore_flags == 0)
-        return false;
-
     /* XXX: Unify these two flags by specifying the arg that might be NULL in
      * misc.  We skip that for now to avoid conflicting with type info for
      * inline args.
      */
-    if (ignore_flags == SYSARG_IGNORE_IF_NEXT_NULL)
+    if (TEST(SYSARG_IGNORE_IF_NEXT_NULL, sysinfo->arg[i].flags))
         if_null_arg = i+1;
-    else if (ignore_flags == SYSARG_IGNORE_IF_PREV_NULL)
+    else if (TEST(SYSARG_IGNORE_IF_PREV_NULL, sysinfo->arg[i].flags))
         if_null_arg = i-1;
-    else {
-        dr_printf("ignore_flags: %x\n", ignore_flags);
-        ASSERT(false, "ignore next and prev are exclusive");
-    }
-
+    else
+        return false;
     ASSERT(if_null_arg >= 0 && if_null_arg < MAX_ARGS_IN_ENTRY,
            "sysarg index out of bound");
     return (if_null_arg >= 0 && if_null_arg < MAX_ARGS_IN_ENTRY &&

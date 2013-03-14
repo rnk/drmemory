@@ -1346,7 +1346,7 @@ static syscall_info_t syscall_info[] = {
      {
          {1, -2, R},
          {4, -5, R|CT, SYSARG_TYPE_SOCKADDR},
-         {5, sizeof(socklen_t), HT|SYSARG_INLINED, DRSYS_TYPE_UNSIGNED_INT},
+         {5, sizeof(socklen_t), SYSARG_INLINED, DRSYS_TYPE_UNSIGNED_INT},
      }
     },
     {{PACKNUM(45,-1),0},"recvfrom", OK, RLONG, 6,
